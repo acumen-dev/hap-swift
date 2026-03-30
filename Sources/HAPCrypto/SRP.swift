@@ -65,9 +65,7 @@ public struct SRPServer: Sendable {
         let v = BigInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
 
         // Generate server private key b
-        var bBytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bBytes.count, &bBytes)
-        let b = BigInt(Data(bBytes))
+        let b = BigInt(generateRandomBytes(count: 32))
 
         // B = (k*v + g^b mod N) mod N
         let gb = BigInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
@@ -148,9 +146,7 @@ public struct SRPServer: Sendable {
     // MARK: - Private Helpers
 
     private static func generateSalt() -> Data {
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return Data(bytes)
+        generateRandomBytes(count: 16)
     }
 
     static func computeX(salt: Data, password: String) -> BigInt {
@@ -202,9 +198,7 @@ struct SRPClient: Sendable {
     private let clientPublicKeyBigInt: BigInt
 
     init() {
-        var aBytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, aBytes.count, &aBytes)
-        let a = BigInt(Data(aBytes))
+        let a = BigInt(generateRandomBytes(count: 32))
         let A = BigInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
 
         self.clientPrivateKey = a
@@ -277,6 +271,17 @@ struct SRPClient: Sendable {
 
         return (clientProof: M1, serverProofExpected: M2, sessionKey: K)
     }
+}
+
+// MARK: - Cross-Platform Random
+
+private func generateRandomBytes(count: Int) -> Data {
+    var rng = SystemRandomNumberGenerator()
+    var bytes = [UInt8](repeating: 0, count: count)
+    for i in 0 ..< count {
+        bytes[i] = UInt8.random(in: 0 ... 255, using: &rng)
+    }
+    return Data(bytes)
 }
 
 // MARK: - Hex Data Extension
