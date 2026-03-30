@@ -114,26 +114,33 @@ private final class HAPChannelHandler: ChannelInboundHandler, @unchecked Sendabl
 
         buffer = Data()
 
-        let ctx = context
-        Task {
+        // Use an EventLoopPromise to bridge async work back to the event loop
+        // without capturing ChannelHandlerContext across isolation boundaries.
+        let promise = context.eventLoop.makePromise(of: Data.self)
+        let proto = self.characteristicProtocol
+        let log = self.logger
+        promise.completeWithTask {
             do {
-                let response = try await self.characteristicProtocol.handleRequest(request)
-                let responseData = HTTPProtocol.serializeResponse(response)
-                ctx.eventLoop.execute {
-                    var outBuf = ctx.channel.allocator.buffer(capacity: responseData.count)
-                    outBuf.writeBytes(responseData)
-                    ctx.writeAndFlush(self.wrapOutboundOut(outBuf), promise: nil)
-                }
+                let response = try await proto.handleRequest(request)
+                return HTTPProtocol.serializeResponse(response)
             } catch {
-                self.logger.error("Request handling error: \(error)")
+                log.error("Request handling error: \(error)")
                 let errorResponse = HTTPProtocol.errorResponse(status: 500, message: "Internal Server Error")
-                let responseData = HTTPProtocol.serializeResponse(errorResponse)
-                ctx.eventLoop.execute {
-                    var outBuf = ctx.channel.allocator.buffer(capacity: responseData.count)
-                    outBuf.writeBytes(responseData)
-                    ctx.writeAndFlush(self.wrapOutboundOut(outBuf), promise: nil)
-                }
+                return HTTPProtocol.serializeResponse(errorResponse)
             }
+        }
+        promise.futureResult.whenComplete { [weak self] result in
+            guard let self else { return }
+            let responseData: Data
+            switch result {
+            case .success(let data): responseData = data
+            case .failure:
+                let err = HTTPProtocol.errorResponse(status: 500, message: "Internal Server Error")
+                responseData = HTTPProtocol.serializeResponse(err)
+            }
+            var outBuf = context.channel.allocator.buffer(capacity: responseData.count)
+            outBuf.writeBytes(responseData)
+            context.writeAndFlush(self.wrapOutboundOut(outBuf), promise: nil)
         }
     }
 
