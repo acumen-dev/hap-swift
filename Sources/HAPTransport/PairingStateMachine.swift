@@ -23,7 +23,9 @@ public actor PairingStateMachine {
     }
 
     public init(setupCode: String, identity: HAPIdentity, pairingStore: any PairingStore, deviceID: String) {
-        self.setupCode = setupCode
+        // HAP SRP uses the raw 8-digit PIN without any separator characters.
+        // Strip dashes so "031-45-154" and "03145154" both work correctly.
+        self.setupCode = setupCode.filter(\.isNumber)
         self.identity = identity
         self.pairingStore = pairingStore
         self.deviceID = deviceID

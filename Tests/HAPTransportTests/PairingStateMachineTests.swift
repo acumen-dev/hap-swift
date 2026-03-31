@@ -60,6 +60,41 @@ struct PairingStateMachineTests {
         #expect(errorItem != nil)
     }
 
+    @Test("setup code with dashes is equivalent to digits-only")
+    func setupCodeDashesStripped() async throws {
+        let identity = HAPIdentity()
+
+        // Accessory initialized with "031-45-154" (as-stored in config)
+        let storeWithDashes = InMemoryPairingStore()
+        let smWithDashes = PairingStateMachine(
+            setupCode: "031-45-154",
+            identity: identity, pairingStore: storeWithDashes,
+            deviceID: "AA:BB:CC:DD:EE:FF"
+        )
+
+        // Accessory initialized with "03145154" (digits-only)
+        let storeDigits = InMemoryPairingStore()
+        let smDigits = PairingStateMachine(
+            setupCode: "03145154",
+            identity: identity, pairingStore: storeDigits,
+            deviceID: "AA:BB:CC:DD:EE:FF"
+        )
+
+        // Both should advance to M2 without error
+        let m1 = TLV8.encode([
+            (type: TLV8Type.state.rawValue, value: Data([0x01])),
+            (type: TLV8Type.method.rawValue, value: Data([0x00])),
+        ])
+
+        let r1 = try await smWithDashes.handleRequest(m1)
+        let r2 = try await smDigits.handleRequest(m1)
+
+        let state1 = try TLV8.decode(r1).first(where: { $0.type == TLV8Type.state.rawValue })?.value
+        let state2 = try TLV8.decode(r2).first(where: { $0.type == TLV8Type.state.rawValue })?.value
+        #expect(state1 == Data([0x02]))
+        #expect(state2 == Data([0x02]))
+    }
+
     @Test("out-of-order state produces error")
     func outOfOrderState() async throws {
         let identity = HAPIdentity()
