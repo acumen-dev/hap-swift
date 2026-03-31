@@ -49,6 +49,34 @@ public actor AppleHAPService {
         )
     }
 
+    /// Create a HAP service using an existing bridge that already has accessories provisioned.
+    public init(
+        bridge: HAPBridge,
+        setupCode: String,
+        deviceID: String,
+        identity: HAPIdentity? = nil,
+        pairingStore: (any PairingStore)? = nil,
+        logger: Logger = Logger(label: "hap.apple")
+    ) {
+        let identity = identity ?? HAPIdentity()
+        let pairingStore = pairingStore ?? InMemoryPairingStore()
+        let discovery = AppleServiceDiscovery(logger: logger)
+
+        self.bridge = bridge
+        self.identity = identity
+        self.pairingStore = pairingStore
+        self.deviceID = deviceID
+        self.logger = logger
+        self.advertiser = HAPAdvertiser(discovery: discovery, deviceID: deviceID)
+        self.server = AppleTCPServer(
+            bridge: bridge,
+            setupCode: setupCode,
+            identity: identity,
+            pairingStore: pairingStore,
+            logger: logger
+        )
+    }
+
     // MARK: - Lifecycle
 
     public func start(port: UInt16 = 0) async throws {
