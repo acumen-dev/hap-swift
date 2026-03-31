@@ -37,7 +37,7 @@ extension HAPCharacteristicType {
 // MARK: - Garage Door Opener
 
 extension HAPCharacteristicType {
-    public static let currentDoorState = HAPCharacteristicType(rawValue: "E")
+    public static let currentDoorState = HAPCharacteristicType(rawValue: "0E")
     public static let targetDoorState = HAPCharacteristicType(rawValue: "32")
     public static let obstructionDetected = HAPCharacteristicType(rawValue: "24")
 }
@@ -45,8 +45,10 @@ extension HAPCharacteristicType {
 // MARK: - Full UUID
 
 extension HAPCharacteristicType {
+    /// Returns the full 128-bit UUID for this characteristic type, e.g.
+    /// `"00000025-0000-1000-8000-0026BB765291"` for `On` (type `"25"`).
     public var fullUUID: String {
-        let padded = String(repeating: "0", count: max(0, 2 - rawValue.count)) + rawValue
-        return "0000\(padded)-0000-1000-8000-0026BB765291"
+        let padded = String(repeating: "0", count: max(0, 8 - rawValue.count)) + rawValue.uppercased()
+        return "\(padded)-0000-1000-8000-0026BB765291"
     }
 }

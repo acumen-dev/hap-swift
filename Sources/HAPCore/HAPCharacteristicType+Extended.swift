@@ -5,7 +5,7 @@
 
 extension HAPCharacteristicType {
     public static let on = HAPCharacteristicType(rawValue: "25")
-    public static let brightness = HAPCharacteristicType(rawValue: "8")
+    public static let brightness = HAPCharacteristicType(rawValue: "08")
     public static let hue = HAPCharacteristicType(rawValue: "13")
     public static let saturation = HAPCharacteristicType(rawValue: "2F")
     public static let colorTemperature = HAPCharacteristicType(rawValue: "CE")
@@ -46,7 +46,7 @@ extension HAPCharacteristicType {
 extension HAPCharacteristicType {
     public static let currentTemperature = HAPCharacteristicType(rawValue: "11")
     public static let targetTemperature = HAPCharacteristicType(rawValue: "35")
-    public static let currentHeatingCoolingState = HAPCharacteristicType(rawValue: "F")
+    public static let currentHeatingCoolingState = HAPCharacteristicType(rawValue: "0F")
     public static let targetHeatingCoolingState = HAPCharacteristicType(rawValue: "33")
     public static let currentRelativeHumidity = HAPCharacteristicType(rawValue: "10")
 }

@@ -2,6 +2,7 @@
 // Copyright 2026 Monagle Pty Ltd
 
 import Foundation
+import Logging
 import HAPCore
 import HAPCrypto
 
@@ -13,6 +14,7 @@ public actor PairingStateMachine {
     private let pairingStore: any PairingStore
     private let deviceID: String
     private var state: State = .idle
+    private let logger = Logger(label: "hap.pairing")
 
     private enum State {
         case idle
@@ -106,13 +108,19 @@ public actor PairingStateMachine {
 
     private func handleM5(_ items: [TLV8.Item]) async throws -> Data {
         guard case .awaitingM5(let sessionKey) = state else {
+            logger.warning("M5: unexpected state (not awaitingM5)")
             return errorResponse(state: 6, error: .unknown)
         }
 
+        logger.debug("M5: received (sessionKey \(sessionKey.count) bytes, hash \(sessionKey.prefix(4).hexString)…)")
+
         guard let encryptedData = items.first(where: { $0.type == TLV8Type.encryptedData.rawValue })?.value else {
+            logger.warning("M5: missing encryptedData TLV item")
             self.state = .error
             return errorResponse(state: 6, error: .authentication)
         }
+
+        logger.debug("M5: encryptedData \(encryptedData.count) bytes")
 
         // Derive encryption key for M5
         let encKey = HAPKeyDerivation.derivePairSetupEncryptionKey(from: sessionKey)
@@ -122,7 +130,9 @@ public actor PairingStateMachine {
         let decrypted: Data
         do {
             decrypted = try HAPEncryption.decrypt(ciphertext: encryptedData, key: encKey, nonce: nonce)
+            logger.debug("M5: decryption succeeded (\(decrypted.count) bytes plaintext)")
         } catch {
+            logger.error("M5: decryption FAILED — \(error). encryptedData=\(encryptedData.count)B, key derived from sessionKey hash \(sessionKey.prefix(4).hexString)…")
             self.state = .error
             return errorResponse(state: 6, error: .authentication)
         }
@@ -133,9 +143,13 @@ public actor PairingStateMachine {
         guard let controllerIdentifier = subItems.first(where: { $0.type == TLV8Type.identifier.rawValue })?.value,
               let controllerPublicKey = subItems.first(where: { $0.type == TLV8Type.publicKey.rawValue })?.value,
               let controllerSignature = subItems.first(where: { $0.type == TLV8Type.signature.rawValue })?.value else {
+            let types = subItems.map { $0.type }
+            logger.error("M5: sub-TLV missing required items. Found types: \(types)")
             self.state = .error
             return errorResponse(state: 6, error: .authentication)
         }
+
+        logger.debug("M5: sub-TLV — identifier \(controllerIdentifier.count)B, publicKey \(controllerPublicKey.count)B, signature \(controllerSignature.count)B")
 
         // Derive iOSDeviceX for signature verification
         let iosDeviceX = HAPKeyDerivation.deriveKey(
@@ -151,17 +165,29 @@ public actor PairingStateMachine {
         iosDeviceInfo.append(controllerIdentifier)
         iosDeviceInfo.append(controllerPublicKey)
 
-        // Verify controller signature
-        let valid = try HAPIdentity.verify(
-            signature: controllerSignature,
-            data: iosDeviceInfo,
-            publicKey: controllerPublicKey
-        )
+        logger.debug("M5: iOSDeviceInfo \(iosDeviceInfo.count)B, verifying signature…")
 
-        guard valid else {
+        // Verify controller signature
+        let valid: Bool
+        do {
+            valid = try HAPIdentity.verify(
+                signature: controllerSignature,
+                data: iosDeviceInfo,
+                publicKey: controllerPublicKey
+            )
+        } catch {
+            logger.error("M5: signature verification threw — \(error)")
             self.state = .error
             return errorResponse(state: 6, error: .authentication)
         }
+
+        guard valid else {
+            logger.error("M5: controller signature INVALID")
+            self.state = .error
+            return errorResponse(state: 6, error: .authentication)
+        }
+
+        logger.debug("M5: controller signature verified OK")
 
         // Store controller pairing
         let identifierString = String(data: controllerIdentifier, encoding: .utf8) ?? controllerIdentifier.hexString
@@ -185,7 +211,15 @@ public actor PairingStateMachine {
         accessoryInfo.append(identity.publicKeyData)
 
         // Sign
-        let accessorySignature = try identity.sign(accessoryInfo)
+        let accessorySignature: Data
+        do {
+            accessorySignature = try identity.sign(accessoryInfo)
+        } catch {
+            logger.error("M6: accessory sign FAILED — \(error)")
+            throw error
+        }
+
+        logger.debug("M6: accessoryInfo \(accessoryInfo.count)B, signature \(accessorySignature.count)B, LTPK \(identity.publicKeyData.count)B")
 
         // Build sub-TLV
         let subTLV = TLV8.encode([
@@ -199,6 +233,7 @@ public actor PairingStateMachine {
         let encrypted = try HAPEncryption.encrypt(plaintext: subTLV, key: encKey, nonce: m6Nonce)
 
         self.state = .paired
+        logger.info("Pair-setup complete — controller \(identifierString)")
 
         return TLV8.encode([
             (type: TLV8Type.state.rawValue, value: Data([0x06])),
