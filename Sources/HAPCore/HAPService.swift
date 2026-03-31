@@ -2,10 +2,15 @@
 // Copyright 2026 Monagle Pty Ltd
 
 public struct HAPService: Sendable {
+    /// The instance identifier (IID) of this service within its accessory.
+    /// Set to 0 for factory-constructed services; `HAPBridge.addAccessory`
+    /// assigns the real IID before storing.
+    public var iid: UInt64
     public let type: HAPServiceType
     public var characteristics: [HAPCharacteristic]
 
-    public init(type: HAPServiceType, characteristics: [HAPCharacteristic]) {
+    public init(iid: UInt64 = 0, type: HAPServiceType, characteristics: [HAPCharacteristic]) {
+        self.iid = iid
         self.type = type
         self.characteristics = characteristics
     }
@@ -22,7 +27,8 @@ extension HAPService {
         firmwareRevision: String,
         startIID: UInt64 = 1
     ) -> HAPService {
-        var iid = startIID
+        // The service occupies startIID; characteristics start at startIID + 1.
+        var iid = startIID + 1
         var chars: [HAPCharacteristic] = []
 
         chars.append(.name(name, iid: iid)); iid += 1
@@ -32,7 +38,7 @@ extension HAPService {
         chars.append(.firmwareRevision(firmwareRevision, iid: iid)); iid += 1
         chars.append(.identify(iid: iid))
 
-        return HAPService(type: .accessoryInformation, characteristics: chars)
+        return HAPService(iid: startIID, type: .accessoryInformation, characteristics: chars)
     }
 
     public static func securitySystem(startIID: UInt64) -> HAPService {

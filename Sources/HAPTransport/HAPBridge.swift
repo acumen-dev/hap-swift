@@ -50,23 +50,26 @@ public actor HAPBridge {
             startIID: 1
         )
 
-        // Assign IIDs to additional services, starting after info service
+        // Assign IIDs to additional services.
+        // Layout: infoService.iid=1, its N chars at 2..N+1,
+        //         then service2.iid=N+2, its chars at N+3..., etc.
         var allServices = [infoService]
-        var iid: UInt64 = UInt64(infoService.characteristics.count + 1)
-        for var service in services {
+        var nextIID: UInt64 = infoService.iid + UInt64(infoService.characteristics.count) + 1
+        for service in services {
+            let serviceIID = nextIID
+            nextIID += 1
             var updatedChars: [HAPCharacteristic] = []
             for char in service.characteristics {
                 updatedChars.append(HAPCharacteristic(
-                    iid: iid,
+                    iid: nextIID,
                     type: char.type,
                     value: char.value,
                     permissions: char.permissions,
                     format: char.format
                 ))
-                iid += 1
+                nextIID += 1
             }
-            service.characteristics = updatedChars
-            allServices.append(service)
+            allServices.append(HAPService(iid: serviceIID, type: service.type, characteristics: updatedChars))
         }
 
         let accessory = HAPAccessory(aid: aid, services: allServices)

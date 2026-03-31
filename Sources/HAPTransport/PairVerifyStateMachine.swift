@@ -100,7 +100,7 @@ public actor PairVerifyStateMachine {
     // MARK: - Verify M3 → M4
 
     private func handleVerifyM3(_ items: [TLV8.Item]) async throws -> Data {
-        guard case .awaitingM3(let sharedSecret, _, let controllerEphemeralPublicKey) = state else {
+        guard case .awaitingM3(let sharedSecret, let accessoryEphemeralPublicKey, let controllerEphemeralPublicKey) = state else {
             return errorResponse(state: 4, error: .authentication)
         }
 
@@ -137,10 +137,12 @@ public actor PairVerifyStateMachine {
             return errorResponse(state: 4, error: .authentication)
         }
 
-        // Build controller info for verification
+        // Build controller info for verification.
+        // HAP spec: iOSDeviceInfo = iOSDeviceEphemeralPublicKey || iOSDevicePairingID || AccessoryEphemeralPublicKey
         var controllerInfo = Data()
         controllerInfo.append(controllerEphemeralPublicKey)
         controllerInfo.append(controllerIdentifier)
+        controllerInfo.append(accessoryEphemeralPublicKey)
 
         // Verify signature
         let valid = try HAPIdentity.verify(

@@ -149,6 +149,7 @@ public struct CharacteristicProtocol: Sendable {
                 }
 
                 serviceList.append([
+                    "iid": service.iid,
                     "type": service.type.rawValue,
                     "characteristics": charList,
                 ])
