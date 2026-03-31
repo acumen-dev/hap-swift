@@ -166,8 +166,12 @@ public struct SRPServer: Sendable {
 
     static func computeM1(A: Data, B: Data, K: Data, salt: Data) -> Data {
         // M1 = SHA512(SHA512(N) XOR SHA512(g) | SHA512(I) | s | A | B | K)
-        let nData = SRPConstants.N.paddedData(to: SRPConstants.paddedLength)
-        let gData = SRPConstants.g.paddedData(to: SRPConstants.paddedLength)
+        // Per RFC 2945, H(N) and H(g) use the minimal (unpadded) big-endian
+        // representation. N is a 3072-bit prime so its raw data is already 384
+        // bytes. g = 5, so its raw data is a single byte [0x05] — NOT padded to
+        // 384. (Contrast with k = H(N | pad(g)) per RFC 5054 where g IS padded.)
+        let nData = SRPConstants.N.data   // 384 bytes — prime fills the full width
+        let gData = SRPConstants.g.data   // [0x05] — minimal big-endian representation
 
         let hashN = Data(SHA512.hash(data: nData))
         let hashG = Data(SHA512.hash(data: gData))

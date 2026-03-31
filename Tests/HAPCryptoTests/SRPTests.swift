@@ -2,6 +2,7 @@
 // Copyright 2026 Monagle Pty Ltd
 
 import Foundation
+import Crypto
 import Testing
 @testable import HAPCrypto
 
@@ -113,6 +114,59 @@ struct SRPTests {
 
         // Session key should be deterministic with fixed inputs
         #expect(serverSessionKey.count == 64)  // SHA-512 output
+    }
+
+    // MARK: - RFC 2945 M1 Correctness
+
+    @Test("H(g) in M1 uses minimal 1-byte representation per RFC 2945")
+    func hgUsesMinimalRepresentation() {
+        // RFC 2945 specifies H(N) XOR H(g) using the minimal big-endian byte
+        // representation of each value — NOT a padded form.
+        //
+        // For g = 5, the minimal representation is [0x05] (1 byte).
+        // Padding g to 384 bytes before hashing (as RFC 5054 does for k) produces
+        // a completely different SHA-512 output, causing M1 to mismatch against any
+        // correct RFC 2945 implementation (including iOS).
+        #expect(SRPConstants.g.data == Data([0x05]))
+
+        let hashOfRaw    = Data(SHA512.hash(data: SRPConstants.g.data))
+        let hashOfPadded = Data(SHA512.hash(data: SRPConstants.g.paddedData(to: 384)))
+        // The two computations must differ — using paddedData for H(g) is wrong.
+        #expect(hashOfRaw != hashOfPadded)
+    }
+
+    @Test("computeM1 result differs between raw-g and padded-g inputs (regression guard)")
+    func computeM1RawVsPadded() {
+        // Build a minimal set of inputs (all zeros is fine — we're testing the
+        // formula structure, not a real handshake).
+        let dummyA    = Data(repeating: 0x01, count: 384)
+        let dummyB    = Data(repeating: 0x02, count: 384)
+        let dummyK    = Data(repeating: 0x03, count: 64)
+        let dummySalt = Data(repeating: 0x04, count: 16)
+
+        // Correct M1 (uses raw g = [0x05]).
+        let m1Correct = SRPServer.computeM1(A: dummyA, B: dummyB, K: dummyK, salt: dummySalt)
+
+        // Simulate what the buggy padded-g version would produce.
+        let nData = SRPConstants.N.data
+        let gDataPadded = SRPConstants.g.paddedData(to: 384)   // the old, wrong path
+        let hashN = Data(SHA512.hash(data: nData))
+        let hashGPadded = Data(SHA512.hash(data: gDataPadded))
+        var xorNG = Data(count: 64)
+        for i in 0 ..< 64 { xorNG[i] = hashN[i] ^ hashGPadded[i] }
+        let hashI = Data(SHA512.hash(data: Data(SRPConstants.username.utf8)))
+        var hasher = SHA512()
+        hasher.update(data: xorNG)
+        hasher.update(data: hashI)
+        hasher.update(data: dummySalt)
+        hasher.update(data: dummyA)
+        hasher.update(data: dummyB)
+        hasher.update(data: dummyK)
+        let m1Buggy = Data(hasher.finalize())
+
+        // The correct and buggy paths must produce different M1 values.
+        // If this test fails, computeM1 has regressed to padding g.
+        #expect(m1Correct != m1Buggy)
     }
 
     @Test("multiple handshakes produce different session keys")
