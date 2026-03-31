@@ -274,27 +274,38 @@ private struct ControllerSession {
         readKey = derived.readKey
     }
 
+    /// Encrypt plaintext into a HAP session frame (HAP spec §5.5.5).
+    /// Frame: [2-byte LE plaintext length N] [N-byte ciphertext] [16-byte Poly1305 tag]
+    /// The 2-byte header is used as AAD so it is integrity-protected.
     mutating func encryptFrame(_ plaintext: Data) throws -> Data {
+        // 2-byte LE PLAINTEXT length — this is both the frame header and the AAD.
+        let plaintextLength = UInt16(plaintext.count)
+        var aad = Data(count: 2)
+        aad[0] = UInt8(plaintextLength & 0xFF)
+        aad[1] = UInt8(plaintextLength >> 8)
+
         let nonce = HAPEncryption.buildNonce(counter: writeCounter)
-        let encrypted = try HAPEncryption.encrypt(plaintext: plaintext, key: writeKey, nonce: nonce)
+        let ciphertextAndTag = try HAPEncryption.encrypt(plaintext: plaintext, key: writeKey, nonce: nonce, aad: aad)
         writeCounter += 1
 
-        var frame = Data(count: 2)
-        let length = UInt16(encrypted.count)
-        frame[0] = UInt8(length & 0xFF)
-        frame[1] = UInt8(length >> 8)
-        frame.append(encrypted)
+        var frame = aad
+        frame.append(ciphertextAndTag)
         return frame
     }
 
+    /// Decrypt a HAP session frame (HAP spec §5.5.5).
+    /// Header = 2-byte LE plaintext length N; frame total = 2 + N + 16 bytes.
     mutating func decryptFrame(_ frameData: Data) throws -> Data {
         guard frameData.count >= 2 else { throw HAPTestError.shortFrame }
-        let length = Int(frameData[0]) | (Int(frameData[1]) << 8)
-        let encrypted = frameData.dropFirst(2)
-        guard encrypted.count == length else { throw HAPTestError.shortFrame }
+        let plaintextLength = Int(frameData[0]) | (Int(frameData[1]) << 8)
+        let totalFrameSize = 2 + plaintextLength + 16
+        guard frameData.count >= totalFrameSize else { throw HAPTestError.shortFrame }
+
+        let aad = frameData.prefix(2)
+        let ciphertextAndTag = Data(frameData[2 ..< totalFrameSize])
 
         let nonce = HAPEncryption.buildNonce(counter: readCounter)
-        let plaintext = try HAPEncryption.decrypt(ciphertext: Data(encrypted), key: readKey, nonce: nonce)
+        let plaintext = try HAPEncryption.decrypt(ciphertext: ciphertextAndTag, key: readKey, nonce: nonce, aad: Data(aad))
         readCounter += 1
         return plaintext
     }
@@ -738,6 +749,53 @@ struct PairingFlowTests {
                 #expect(service["characteristics"] != nil)
             }
         }
+    }
+
+    // MARK: - Frame Format
+
+    @Test("HAP session frame uses plaintext length header + AAD (spec §5.5.5 compatibility)")
+    func sessionFrameFormatSpec() async throws {
+        let (_, identity, _, pairingStateMachine, pairVerifyStateMachine) = makePairingComponents()
+        let controller = HAPControllerSimulator()
+
+        _ = try await runPairSetup(controller: controller, stateMachine: pairingStateMachine)
+        let sharedSecret = try await runPairVerify(
+            controller: controller,
+            stateMachine: pairVerifyStateMachine,
+            accessoryLTPK: identity.publicKeyData
+        )
+
+        var controllerSession = ControllerSession(sharedSecret: sharedSecret)
+        let accessoryKeys = await pairVerifyStateMachine.sessionKeys()!
+        let accessorySession = HAPSession()
+        await accessorySession.establishSession(
+            readKey: accessoryKeys.readKey,
+            writeKey: accessoryKeys.writeKey
+        )
+
+        // Encrypt a known-length plaintext
+        let plaintext = Data("Hello HAP".utf8)           // 9 bytes
+        let frame = try controllerSession.encryptFrame(plaintext)
+
+        // HAP spec §5.5.5: header = 2-byte LE PLAINTEXT length (9 = 0x09 0x00)
+        // Total frame = 2 + 9 + 16 = 27 bytes
+        #expect(frame.count == 27, "Frame must be 2 (header) + 9 (ciphertext) + 16 (tag)")
+        #expect(frame[0] == 0x09, "Header low byte = plaintext length (9)")
+        #expect(frame[1] == 0x00, "Header high byte = 0 (length < 256)")
+
+        // Accessory can decrypt it
+        var buffer = frame
+        let decrypted = try await accessorySession.decryptFrame(from: &buffer)
+        #expect(decrypted == plaintext)
+        #expect(buffer.isEmpty, "Entire frame must be consumed")
+
+        // Verify the inverse direction
+        let responseFrame = try await accessorySession.encrypt(plaintext)
+        #expect(responseFrame.count == 27)
+        #expect(responseFrame[0] == 0x09)
+        #expect(responseFrame[1] == 0x00)
+        let decryptedResponse = try controllerSession.decryptFrame(responseFrame)
+        #expect(decryptedResponse == plaintext)
     }
 
     // MARK: - Multiple Messages — Counter Increment

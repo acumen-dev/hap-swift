@@ -8,25 +8,43 @@ public enum HAPEncryption {
 
     // MARK: - Encrypt
 
+    /// Encrypt `plaintext` with ChaCha20-Poly1305.
+    ///
+    /// - Parameters:
+    ///   - aad: Optional additional authenticated data. HAP session frames pass the 2-byte
+    ///     LE plaintext-length header here per HAP spec §5.5.5. Pairing sub-messages
+    ///     (M5, M6, PV-M2, PV-M3) leave this empty.
     public static func encrypt(
         plaintext: Data,
         key: SymmetricKey,
-        nonce nonceData: Data
+        nonce nonceData: Data,
+        aad: Data = Data()
     ) throws -> Data {
         guard nonceData.count == 12 else {
             throw HAPCryptoError.encryptionFailed
         }
         let nonce = try ChaChaPoly.Nonce(data: nonceData)
-        let sealed = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce)
+        let sealed: ChaChaPoly.SealedBox
+        if aad.isEmpty {
+            sealed = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce)
+        } else {
+            sealed = try ChaChaPoly.seal(plaintext, using: key, nonce: nonce, authenticating: aad)
+        }
         return sealed.ciphertext + sealed.tag
     }
 
     // MARK: - Decrypt
 
+    /// Decrypt a ChaCha20-Poly1305 ciphertext (with appended 16-byte auth tag).
+    ///
+    /// - Parameters:
+    ///   - aad: Optional additional authenticated data. Must match the `aad` used during
+    ///     encryption — HAP session frames pass the 2-byte LE plaintext-length header here.
     public static func decrypt(
         ciphertext: Data,
         key: SymmetricKey,
-        nonce nonceData: Data
+        nonce nonceData: Data,
+        aad: Data = Data()
     ) throws -> Data {
         guard nonceData.count == 12 else {
             throw HAPCryptoError.decryptionFailed
@@ -39,7 +57,11 @@ public enum HAPEncryption {
         let ct = ciphertext[ciphertext.startIndex ..< ciphertext.startIndex + tagStart]
         let tag = ciphertext[ciphertext.startIndex + tagStart ..< ciphertext.endIndex]
         let sealedBox = try ChaChaPoly.SealedBox(nonce: nonce, ciphertext: ct, tag: tag)
-        return try ChaChaPoly.open(sealedBox, using: key)
+        if aad.isEmpty {
+            return try ChaChaPoly.open(sealedBox, using: key)
+        } else {
+            return try ChaChaPoly.open(sealedBox, using: key, authenticating: aad)
+        }
     }
 
     // MARK: - Nonce Builders

@@ -58,8 +58,15 @@ private actor HAPConnectionContext {
                 // by a concurrent task during the await are preserved.
                 let bytesAvailable = buffer.count
                 var localBuffer = buffer
-                guard let plaintext = try? await session.decryptFrame(from: &localBuffer) else {
-                    break // incomplete frame — wait for more data
+                let plaintext: Data
+                do {
+                    guard let decrypted = try await session.decryptFrame(from: &localBuffer) else {
+                        break // incomplete frame — wait for more data
+                    }
+                    plaintext = decrypted
+                } catch {
+                    logger.error("Connection \(connectionID): session decrypt failed (frame format or key mismatch): \(error)")
+                    break
                 }
                 let consumed = bytesAvailable - localBuffer.count
                 buffer.removeFirst(consumed)
