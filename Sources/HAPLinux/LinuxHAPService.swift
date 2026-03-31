@@ -44,6 +44,7 @@ public actor LinuxHAPService {
             setupCode: setupCode,
             identity: identity,
             pairingStore: pairingStore,
+            deviceID: deviceID,
             logger: logger
         )
     }

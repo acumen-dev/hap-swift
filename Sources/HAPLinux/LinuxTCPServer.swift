@@ -28,16 +28,17 @@ public final class LinuxTCPServer: HAPServer, @unchecked Sendable {
         setupCode: String,
         identity: HAPIdentity,
         pairingStore: any PairingStore,
+        deviceID: String,
         logger: Logger = Logger(label: "hap.linux.tcp")
     ) {
         self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
         self.logger = logger
 
         let pairingStateMachine = PairingStateMachine(
-            setupCode: setupCode, identity: identity, pairingStore: pairingStore
+            setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
         let pairVerifyStateMachine = PairVerifyStateMachine(
-            identity: identity, pairingStore: pairingStore
+            identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
         self.characteristicProtocol = CharacteristicProtocol(
             bridge: bridge,
