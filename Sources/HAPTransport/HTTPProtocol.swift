@@ -46,9 +46,23 @@ public enum HTTPProtocol {
 
     // MARK: - Parse Request
 
+    /// Parses an HTTP/1.1 request from raw bytes.
+    ///
+    /// Headers are decoded as UTF-8 text (they must be ASCII per RFC 7230).
+    /// The body is extracted as raw `Data` using the `Content-Length` header —
+    /// this is essential for HAP pairing requests whose bodies are binary TLV8
+    /// payloads that are NOT valid UTF-8. Converting them through a String would
+    /// corrupt or silently drop bytes and cause iOS to time out waiting for M4/M6.
     public static func parseRequest(from data: Data) -> HTTPRequest? {
-        guard let string = String(data: data, encoding: .utf8) else { return nil }
-        let lines = string.components(separatedBy: "\r\n")
+        // Locate the header/body boundary.
+        let crlfcrlf = Data([0x0D, 0x0A, 0x0D, 0x0A])
+        guard let separatorRange = data.range(of: crlfcrlf) else { return nil }
+
+        // Parse ONLY the header section as UTF-8 (body stays as raw Data).
+        let headerSection = data[data.startIndex ..< separatorRange.lowerBound]
+        guard let headerString = String(data: headerSection, encoding: .utf8) else { return nil }
+
+        let lines = headerString.components(separatedBy: "\r\n")
         guard !lines.isEmpty else { return nil }
 
         // Request line: METHOD PATH HTTP/1.1
@@ -58,24 +72,32 @@ public enum HTTPProtocol {
         let method = String(requestLine[0])
         let path = String(requestLine[1])
 
-        // Headers
+        // Headers — collect and find Content-Length.
         var headers: [(name: String, value: String)] = []
+        var contentLength: Int? = nil
         for i in 1 ..< lines.count {
-            if lines[i].isEmpty {
-                break
-            }
+            guard !lines[i].isEmpty else { break }
             if let colonIndex = lines[i].firstIndex(of: ":") {
                 let name = String(lines[i][..<colonIndex]).trimmingCharacters(in: .whitespaces)
                 let value = String(lines[i][lines[i].index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
                 headers.append((name: name, value: value))
+                if name.lowercased() == "content-length", let length = Int(value) {
+                    contentLength = length
+                }
             }
         }
 
-        // Body: everything after the blank line
-        var body = Data()
-        if let headerEndRange = string.range(of: "\r\n\r\n") {
-            let bodyString = string[headerEndRange.upperBound...]
-            body = Data(bodyString.utf8)
+        // Body: raw bytes immediately after the \r\n\r\n separator.
+        let bodyStart = separatorRange.upperBound
+        let availableBody = data[bodyStart...]
+
+        let body: Data
+        if let expectedLength = contentLength {
+            // Require exactly Content-Length bytes — return nil if incomplete.
+            guard availableBody.count >= expectedLength else { return nil }
+            body = Data(availableBody.prefix(expectedLength))
+        } else {
+            body = Data(availableBody)
         }
 
         return HTTPRequest(method: method, path: path, headers: headers, body: body)
