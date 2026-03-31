@@ -12,6 +12,10 @@ public actor HAPBridge {
     private var writeHandlers: [String: @Sendable (HAPCharacteristicValue) async throws -> Void] = [:]
     public let category: HAPCategory
 
+    private static func handlerKey(aid: UInt64, iid: UInt64) -> String {
+        "\(aid).\(iid)"
+    }
+
     public init(info: AccessoryInfo, category: HAPCategory = .bridge) {
         self.category = category
 
@@ -94,7 +98,7 @@ public actor HAPBridge {
         return nil
     }
 
-    public func writeCharacteristic(aid: UInt64, iid: UInt64, value: HAPCharacteristicValue) throws {
+    public func writeCharacteristic(aid: UInt64, iid: UInt64, value: HAPCharacteristicValue) async throws {
         guard var accessory = accessories[aid] else {
             throw HAPError.notFound
         }
@@ -116,5 +120,36 @@ public actor HAPBridge {
 
         guard found else { throw HAPError.notFound }
         accessories[aid] = accessory
+
+        let key = Self.handlerKey(aid: aid, iid: iid)
+        if let handler = writeHandlers[key] {
+            try await handler(value)
+        }
+    }
+
+    // MARK: - Write Handlers
+
+    public func registerWriteHandler(
+        aid: UInt64,
+        iid: UInt64,
+        handler: @escaping @Sendable (HAPCharacteristicValue) async throws -> Void
+    ) {
+        writeHandlers[Self.handlerKey(aid: aid, iid: iid)] = handler
+    }
+
+    // MARK: - Characteristic Updates
+
+    public func updateCharacteristic(aid: UInt64, iid: UInt64, value: HAPCharacteristicValue) {
+        guard var accessory = accessories[aid] else { return }
+
+        for serviceIndex in 0 ..< accessory.services.count {
+            for charIndex in 0 ..< accessory.services[serviceIndex].characteristics.count {
+                if accessory.services[serviceIndex].characteristics[charIndex].iid == iid {
+                    accessory.services[serviceIndex].characteristics[charIndex].value = value
+                    accessories[aid] = accessory
+                    return
+                }
+            }
+        }
     }
 }
