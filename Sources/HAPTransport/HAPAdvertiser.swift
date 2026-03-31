@@ -43,7 +43,8 @@ public struct HAPAdvertiser: Sendable {
                 "s#": "1",
                 "sf": isPaired ? "0" : "1",
                 "ci": String(category.rawValue),
-            ]
+            ],
+            advertiseOnAllInterfaces: true
         )
         try await discovery.advertise(service: record)
     }
