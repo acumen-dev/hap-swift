@@ -90,8 +90,8 @@ struct HAPBridgeTests {
     @Test("read characteristic")
     func readCharacteristic() async {
         let bridge = makeBridge()
-        // Bridge info service starts at IID 1, name is IID 1
-        let value = await bridge.readCharacteristic(aid: 1, iid: 1)
+        // Service iid=1, name characteristic iid=2 (service occupies the startIID slot)
+        let value = await bridge.readCharacteristic(aid: 1, iid: 2)
         #expect(value == .string("Test Bridge"))
     }
 

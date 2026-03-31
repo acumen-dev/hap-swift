@@ -156,10 +156,16 @@ public actor PairVerifyStateMachine {
             return errorResponse(state: 4, error: .authentication)
         }
 
-        // Derive session keys
-        let (writeKey, readKey) = HAPKeyDerivation.deriveSessionKeys(from: sharedSecret)
+        // Derive session keys.
+        // deriveSessionKeys returns keys named from the CONTROLLER's perspective:
+        //   .writeKey = "Control-Write-Encryption-Key" — controller encrypts, accessory decrypts
+        //   .readKey  = "Control-Read-Encryption-Key"  — accessory encrypts, controller decrypts
+        // For the ACCESSORY's HAPSession we therefore swap them:
+        //   session.readKey  (incoming data to decrypt) = Control-Write = derived.writeKey
+        //   session.writeKey (outgoing data to encrypt) = Control-Read  = derived.readKey
+        let derived = HAPKeyDerivation.deriveSessionKeys(from: sharedSecret)
 
-        self.state = .verified(readKey: readKey, writeKey: writeKey)
+        self.state = .verified(readKey: derived.writeKey, writeKey: derived.readKey)
 
         return TLV8.encode([
             (type: TLV8Type.state.rawValue, value: Data([0x04])),

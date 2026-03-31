@@ -23,15 +23,17 @@ struct HAPServiceTests {
         #expect(service.characteristics[5].type == .identify)
     }
 
-    @Test("accessoryInformation IIDs are sequential from startIID")
+    @Test("accessoryInformation IIDs are sequential from startIID+1")
     func accessoryInformationIIDs() {
         let service = HAPService.accessoryInformation(
             name: "Test", manufacturer: "M", model: "M",
             serialNumber: "S", firmwareRevision: "1.0",
             startIID: 10
         )
+        // Service occupies startIID (10); characteristics start at startIID+1 (11)
+        #expect(service.iid == 10)
         for (index, char) in service.characteristics.enumerated() {
-            #expect(char.iid == UInt64(10 + index))
+            #expect(char.iid == UInt64(11 + index))
         }
     }
 
