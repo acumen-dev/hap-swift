@@ -9,17 +9,134 @@ import HAPCore
 import HAPCrypto
 import HAPTransport
 
+// MARK: - HAPConnectionContext
+
+/// Per-connection state: own state machines, session, and receive buffer.
+///
+/// Using an actor serialises buffer mutations and ensures the encrypted/plain
+/// transition happens atomically with respect to incoming data.
+private actor HAPConnectionContext {
+    var buffer = Data()
+    let session = HAPSession()
+    let charProtocol: CharacteristicProtocol
+    let pairVerifyStateMachine: PairVerifyStateMachine
+
+    init(
+        bridge: HAPBridge,
+        setupCode: String,
+        identity: HAPIdentity,
+        pairingStore: any PairingStore
+    ) {
+        let pairing = PairingStateMachine(
+            setupCode: setupCode, identity: identity, pairingStore: pairingStore
+        )
+        let pairVerify = PairVerifyStateMachine(
+            identity: identity, pairingStore: pairingStore
+        )
+        self.pairVerifyStateMachine = pairVerify
+        self.charProtocol = CharacteristicProtocol(
+            bridge: bridge,
+            pairingStateMachine: pairing,
+            pairVerifyStateMachine: pairVerify
+        )
+    }
+
+    // MARK: - Data processing
+
+    /// Append newly-received bytes to the buffer and process as many complete
+    /// frames as possible.  Returns a list of raw byte blobs to send back.
+    func process(incoming data: Data, logger: Logger, connectionID: Int) async -> [Data] {
+        buffer.append(data)
+        var outgoing: [Data] = []
+
+        while !buffer.isEmpty {
+            if await session.isEncrypted {
+                // --- Encrypted phase ---
+                // Snapshot the buffer into a local copy (required because actor-isolated
+                // properties cannot be passed inout across actor hops).  Only the consumed
+                // prefix is removed from self.buffer after the call, so any bytes appended
+                // by a concurrent task during the await are preserved.
+                let bytesAvailable = buffer.count
+                var localBuffer = buffer
+                guard let plaintext = try? await session.decryptFrame(from: &localBuffer) else {
+                    break // incomplete frame — wait for more data
+                }
+                let consumed = bytesAvailable - localBuffer.count
+                buffer.removeFirst(consumed)
+
+                guard let request = HTTPProtocol.parseRequest(from: plaintext) else {
+                    logger.debug("Connection \(connectionID): failed to parse decrypted request")
+                    break
+                }
+
+                let response: HTTPResponse
+                do {
+                    response = try await charProtocol.handleRequest(request)
+                } catch {
+                    logger.error("Connection \(connectionID): request handler error: \(error)")
+                    response = HTTPProtocol.errorResponse(status: 500, message: "Internal Server Error")
+                }
+
+                let responseData = HTTPProtocol.serializeResponse(response)
+                do {
+                    let encrypted = try await session.encrypt(responseData)
+                    outgoing.append(encrypted)
+                } catch {
+                    logger.error("Connection \(connectionID): response encryption failed: \(error)")
+                }
+
+            } else {
+                // --- Plaintext phase (pair-setup / pair-verify) ---
+                guard let request = HTTPProtocol.parseRequest(from: buffer) else {
+                    break // incomplete or unparseable — wait for more data
+                }
+
+                // Consume the request from the buffer.
+                // HTTPProtocol.parseRequest does not report how many bytes it consumed,
+                // so we clear the whole buffer — during the plaintext phase iOS sends
+                // exactly one request and waits for a full response before sending the next.
+                buffer.removeAll()
+
+                let response: HTTPResponse
+                do {
+                    response = try await charProtocol.handleRequest(request)
+                } catch {
+                    logger.error("Connection \(connectionID): request handler error: \(error)")
+                    response = HTTPProtocol.errorResponse(status: 500, message: "Internal Server Error")
+                }
+
+                let responseData = HTTPProtocol.serializeResponse(response)
+                outgoing.append(responseData)
+
+                // If pair-verify just completed (M4 sent), promote this connection
+                // to encrypted mode.  All subsequent data from iOS will be encrypted.
+                if let keys = await pairVerifyStateMachine.sessionKeys() {
+                    await session.establishSession(readKey: keys.readKey, writeKey: keys.writeKey)
+                    logger.info("Connection \(connectionID): session encryption established")
+                }
+            }
+        }
+
+        return outgoing
+    }
+}
+
 // MARK: - AppleTCPServer
 
 public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private let lock = NSLock()
     private var listener: NWListener?
     private var connections: [Int: NWConnection] = [:]
+    private var contexts: [Int: HAPConnectionContext] = [:]
     private var nextConnectionID = 0
     private let logger: Logger
-    private let characteristicProtocol: CharacteristicProtocol
-    private let pairingStateMachine: PairingStateMachine
-    private let pairVerifyStateMachine: PairVerifyStateMachine
+
+    // Stored for creating per-connection contexts
+    private let bridge: HAPBridge
+    private let setupCode: String
+    private let identity: HAPIdentity
+    private let pairingStore: any PairingStore
+
     private var _port: UInt16 = 0
 
     public var port: UInt16 {
@@ -33,18 +150,11 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
         pairingStore: any PairingStore,
         logger: Logger = Logger(label: "hap.apple.tcp")
     ) {
+        self.bridge = bridge
+        self.setupCode = setupCode
+        self.identity = identity
+        self.pairingStore = pairingStore
         self.logger = logger
-        self.pairingStateMachine = PairingStateMachine(
-            setupCode: setupCode, identity: identity, pairingStore: pairingStore
-        )
-        self.pairVerifyStateMachine = PairVerifyStateMachine(
-            identity: identity, pairingStore: pairingStore
-        )
-        self.characteristicProtocol = CharacteristicProtocol(
-            bridge: bridge,
-            pairingStateMachine: pairingStateMachine,
-            pairVerifyStateMachine: pairVerifyStateMachine
-        )
     }
 
     // MARK: - HAPServer
@@ -58,31 +168,16 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
         }
 
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                if let actualPort = listener.port?.rawValue {
-                    self.lock.withLock { self._port = actualPort }
-                    self.logger.info("HAP server listening on port \(actualPort)")
-                }
-            case .failed(let error):
-                self.logger.error("HAP listener failed: \(error)")
-            case .cancelled:
-                self.logger.info("HAP listener cancelled")
-            default:
-                break
-            }
-        }
-
         listener.newConnectionHandler = { [weak self] connection in
             self?.handleNewConnection(connection)
         }
 
-        listener.start(queue: .global(qos: .userInitiated))
-        self.lock.withLock { self.listener = listener }
-
-        // Wait for listener to be ready
+        // Set the state handler BEFORE start() to eliminate the race where .ready
+        // fires between start() and a second handler assignment.
+        // CheckedContinuation is Sendable, so it can be captured directly in the
+        // @Sendable closure without a mutable guard variable.
+        // NWListener guarantees each state is delivered at most once, so calling
+        // continuation.resume() exactly once is safe by API contract.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
@@ -94,14 +189,19 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                     }
                     continuation.resume()
                 case .failed(let error):
+                    self.logger.error("HAP listener failed: \(error)")
                     continuation.resume(throwing: error)
                 case .cancelled:
+                    self.logger.info("HAP listener cancelled")
                     continuation.resume(throwing: HAPError.unavailable)
                 default:
                     break
                 }
             }
+            listener.start(queue: .global(qos: .userInitiated))
         }
+
+        self.lock.withLock { self.listener = listener }
     }
 
     public func stop() async {
@@ -110,6 +210,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             let c = self.connections
             self.listener = nil
             self.connections.removeAll()
+            self.contexts.removeAll()
             return (l, c)
         }
 
@@ -127,10 +228,16 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             let id = nextConnectionID
             nextConnectionID += 1
             connections[id] = connection
+            contexts[id] = HAPConnectionContext(
+                bridge: bridge,
+                setupCode: setupCode,
+                identity: identity,
+                pairingStore: pairingStore
+            )
             return id
         }
 
-        logger.debug("New HAP connection \(connectionID)")
+        logger.info("New HAP connection \(connectionID)")
 
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
@@ -158,7 +265,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
 
             if let data = content, !data.isEmpty {
                 Task {
-                    await self.processRequest(data: data, connection: connection, connectionID: connectionID)
+                    await self.processData(data: data, connection: connection, connectionID: connectionID)
                 }
             }
 
@@ -168,36 +275,29 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 self.logger.debug("Connection \(connectionID) receive error: \(error)")
                 self.removeConnection(connectionID)
             } else {
-                // Continue receiving
                 self.receiveData(connection: connection, connectionID: connectionID)
             }
         }
     }
 
-    private func processRequest(data: Data, connection: NWConnection, connectionID: Int) async {
-        guard let request = HTTPProtocol.parseRequest(from: data) else {
-            logger.debug("Connection \(connectionID): failed to parse HTTP request")
-            return
-        }
+    private func processData(data: Data, connection: NWConnection, connectionID: Int) async {
+        guard let context = lock.withLock({ contexts[connectionID] }) else { return }
 
-        do {
-            let response = try await characteristicProtocol.handleRequest(request)
-            let responseData = HTTPProtocol.serializeResponse(response)
+        let responses = await context.process(incoming: data, logger: logger, connectionID: connectionID)
+        for responseData in responses {
             connection.send(content: responseData, completion: .contentProcessed { [weak self] error in
                 if let error {
                     self?.logger.debug("Connection \(connectionID) send error: \(error)")
                 }
             })
-        } catch {
-            logger.error("Connection \(connectionID) request error: \(error)")
-            let errorResponse = HTTPProtocol.errorResponse(status: 500, message: "Internal Server Error")
-            let responseData = HTTPProtocol.serializeResponse(errorResponse)
-            connection.send(content: responseData, completion: .contentProcessed { _ in })
         }
     }
 
     private func removeConnection(_ connectionID: Int) {
-        let connection = lock.withLock { connections.removeValue(forKey: connectionID) }
+        let connection = lock.withLock {
+            contexts.removeValue(forKey: connectionID)
+            return connections.removeValue(forKey: connectionID)
+        }
         connection?.cancel()
     }
 }
