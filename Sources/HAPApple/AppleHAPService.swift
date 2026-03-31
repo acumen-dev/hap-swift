@@ -45,6 +45,7 @@ public actor AppleHAPService {
             setupCode: setupCode,
             identity: identity,
             pairingStore: pairingStore,
+            deviceID: deviceID,
             logger: logger
         )
     }
@@ -73,6 +74,7 @@ public actor AppleHAPService {
             setupCode: setupCode,
             identity: identity,
             pairingStore: pairingStore,
+            deviceID: deviceID,
             logger: logger
         )
     }

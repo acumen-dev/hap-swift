@@ -29,7 +29,8 @@ public actor HAPBridge {
             startIID: 1
         )
 
-        let bridge = HAPAccessory(aid: 1, services: [infoService])
+        let protocolService = HAPService.protocolInformation(startIID: 8)
+        let bridge = HAPAccessory(aid: 1, services: [infoService, protocolService])
         self.accessories[1] = bridge
     }
 

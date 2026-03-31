@@ -11,6 +11,7 @@ import HAPCrypto
 public actor PairVerifyStateMachine {
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
+    private let deviceID: String
     private var state: State = .idle
 
     private enum State {
@@ -19,9 +20,10 @@ public actor PairVerifyStateMachine {
         case verified(readKey: SymmetricKey, writeKey: SymmetricKey)
     }
 
-    public init(identity: HAPIdentity, pairingStore: any PairingStore) {
+    public init(identity: HAPIdentity, pairingStore: any PairingStore, deviceID: String) {
         self.identity = identity
         self.pairingStore = pairingStore
+        self.deviceID = deviceID
     }
 
     public func handleRequest(_ data: Data) async throws -> Data {
@@ -68,7 +70,7 @@ public actor PairVerifyStateMachine {
         // Build accessory info for signing
         var accessoryInfo = Data()
         accessoryInfo.append(accessoryEphemeralPublicKey)
-        accessoryInfo.append(Data("AcumenBridge".utf8))
+        accessoryInfo.append(Data(deviceID.utf8))
         accessoryInfo.append(controllerEphemeralPublicKey)
 
         // Sign
@@ -76,7 +78,7 @@ public actor PairVerifyStateMachine {
 
         // Build sub-TLV
         let subTLV = TLV8.encode([
-            (type: TLV8Type.identifier.rawValue, value: Data("AcumenBridge".utf8)),
+            (type: TLV8Type.identifier.rawValue, value: Data(deviceID.utf8)),
             (type: TLV8Type.signature.rawValue, value: signature),
         ])
 

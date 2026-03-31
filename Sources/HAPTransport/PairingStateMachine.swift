@@ -11,6 +11,7 @@ public actor PairingStateMachine {
     private let setupCode: String
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
+    private let deviceID: String
     private var state: State = .idle
 
     private enum State {
@@ -21,10 +22,11 @@ public actor PairingStateMachine {
         case error
     }
 
-    public init(setupCode: String, identity: HAPIdentity, pairingStore: any PairingStore) {
+    public init(setupCode: String, identity: HAPIdentity, pairingStore: any PairingStore, deviceID: String) {
         self.setupCode = setupCode
         self.identity = identity
         self.pairingStore = pairingStore
+        self.deviceID = deviceID
     }
 
     public func handleRequest(_ data: Data) async throws -> Data {
@@ -172,7 +174,7 @@ public actor PairingStateMachine {
             outputByteCount: 32
         )
 
-        let accessoryIdentifier = Data("AcumenBridge".utf8)
+        let accessoryIdentifier = Data(deviceID.utf8)
 
         // Build accessory info: AccessoryX + accessory pairing ID + accessory LTPK
         var accessoryInfo = Data()

@@ -20,6 +20,12 @@ extension HAPCharacteristicType {
     public static let identify = HAPCharacteristicType(rawValue: "14")
 }
 
+// MARK: - Protocol Information
+
+extension HAPCharacteristicType {
+    public static let version = HAPCharacteristicType(rawValue: "37")
+}
+
 // MARK: - Security System
 
 extension HAPCharacteristicType {

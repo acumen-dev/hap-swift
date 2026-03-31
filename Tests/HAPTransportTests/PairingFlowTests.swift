@@ -342,11 +342,13 @@ private func makePairingComponents(setupCode: String = "03145154") -> (
     let pairingStateMachine = PairingStateMachine(
         setupCode: setupCode,
         identity: identity,
-        pairingStore: pairingStore
+        pairingStore: pairingStore,
+        deviceID: "AA:BB:CC:DD:EE:FF"
     )
     let pairVerifyStateMachine = PairVerifyStateMachine(
         identity: identity,
-        pairingStore: pairingStore
+        pairingStore: pairingStore,
+        deviceID: "AA:BB:CC:DD:EE:FF"
     )
     return (bridge, identity, pairingStore, pairingStateMachine, pairVerifyStateMachine)
 }

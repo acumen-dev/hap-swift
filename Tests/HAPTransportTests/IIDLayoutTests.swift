@@ -219,11 +219,13 @@ struct IIDLayoutTests {
             pairingStateMachine: PairingStateMachine(
                 setupCode: "03145154",
                 identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore()
+                pairingStore: InMemoryPairingStore(),
+                deviceID: "AA:BB:CC:DD:EE:FF"
             ),
             pairVerifyStateMachine: PairVerifyStateMachine(
                 identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore()
+                pairingStore: InMemoryPairingStore(),
+                deviceID: "AA:BB:CC:DD:EE:FF"
             )
         )
 
@@ -274,11 +276,13 @@ struct IIDLayoutTests {
             pairingStateMachine: PairingStateMachine(
                 setupCode: "03145154",
                 identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore()
+                pairingStore: InMemoryPairingStore(),
+                deviceID: "AA:BB:CC:DD:EE:FF"
             ),
             pairVerifyStateMachine: PairVerifyStateMachine(
                 identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore()
+                pairingStore: InMemoryPairingStore(),
+                deviceID: "AA:BB:CC:DD:EE:FF"
             )
         )
         let request = HTTPRequest(method: "GET", path: "/accessories", headers: [], body: Data())

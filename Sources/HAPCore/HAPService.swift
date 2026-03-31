@@ -41,6 +41,18 @@ extension HAPService {
         return HAPService(iid: startIID, type: .accessoryInformation, characteristics: chars)
     }
 
+    public static func protocolInformation(startIID: UInt64 = 1) -> HAPService {
+        HAPService(iid: startIID, type: .protocolInformation, characteristics: [
+            HAPCharacteristic(
+                iid: startIID + 1,
+                type: .version,
+                value: .string("01.01.000"),
+                permissions: [.read],
+                format: .string
+            ),
+        ])
+    }
+
     public static func securitySystem(startIID: UInt64) -> HAPService {
         var iid = startIID
         var chars: [HAPCharacteristic] = []

@@ -25,13 +25,14 @@ private actor HAPConnectionContext {
         bridge: HAPBridge,
         setupCode: String,
         identity: HAPIdentity,
-        pairingStore: any PairingStore
+        pairingStore: any PairingStore,
+        deviceID: String
     ) {
         let pairing = PairingStateMachine(
-            setupCode: setupCode, identity: identity, pairingStore: pairingStore
+            setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
         let pairVerify = PairVerifyStateMachine(
-            identity: identity, pairingStore: pairingStore
+            identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
         self.pairVerifyStateMachine = pairVerify
         self.charProtocol = CharacteristicProtocol(
@@ -143,6 +144,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private let setupCode: String
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
+    private let deviceID: String
 
     private var _port: UInt16 = 0
 
@@ -155,12 +157,14 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
         setupCode: String,
         identity: HAPIdentity,
         pairingStore: any PairingStore,
+        deviceID: String,
         logger: Logger = Logger(label: "hap.apple.tcp")
     ) {
         self.bridge = bridge
         self.setupCode = setupCode
         self.identity = identity
         self.pairingStore = pairingStore
+        self.deviceID = deviceID
         self.logger = logger
     }
 
@@ -239,7 +243,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 bridge: bridge,
                 setupCode: setupCode,
                 identity: identity,
-                pairingStore: pairingStore
+                pairingStore: pairingStore,
+                deviceID: deviceID
             )
             return id
         }

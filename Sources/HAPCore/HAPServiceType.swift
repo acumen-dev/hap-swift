@@ -15,6 +15,7 @@ extension HAPServiceType {
     public static let accessoryInformation = HAPServiceType(rawValue: "3E")
     public static let securitySystem = HAPServiceType(rawValue: "7E")
     public static let garageDoorOpener = HAPServiceType(rawValue: "41")
+    public static let protocolInformation = HAPServiceType(rawValue: "A2")
 }
 
 // MARK: - Full UUID

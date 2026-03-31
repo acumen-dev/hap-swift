@@ -14,7 +14,7 @@ struct PairingStateMachineTests {
     func m1ReturnsM2() async throws {
         let identity = HAPIdentity()
         let store = InMemoryPairingStore()
-        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store)
+        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store, deviceID: "AA:BB:CC:DD:EE:FF")
 
         // Build M1
         let m1 = TLV8.encode([
@@ -42,7 +42,7 @@ struct PairingStateMachineTests {
     func invalidM1Method() async throws {
         let identity = HAPIdentity()
         let store = InMemoryPairingStore()
-        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store)
+        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store, deviceID: "AA:BB:CC:DD:EE:FF")
 
         // M1 with method != 0
         let m1 = TLV8.encode([
@@ -64,7 +64,7 @@ struct PairingStateMachineTests {
     func outOfOrderState() async throws {
         let identity = HAPIdentity()
         let store = InMemoryPairingStore()
-        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store)
+        let sm = PairingStateMachine(setupCode: "03145154", identity: identity, pairingStore: store, deviceID: "AA:BB:CC:DD:EE:FF")
 
         // Send M3 without M1 first
         let m3 = TLV8.encode([
