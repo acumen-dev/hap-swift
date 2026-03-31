@@ -6,8 +6,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/acumen-dev/mdns-swift.git",
       "state" : {
-        "revision" : "8c8cff549b99cbbf45407f901169b138f1f9bcc7",
-        "version" : "1.0.0"
+        "revision" : "ab8a6272ebe2a3e29ea55de78124ac49850088cb",
+        "version" : "1.0.2"
       }
     },
     {

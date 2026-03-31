@@ -64,6 +64,8 @@ struct HAPAdvertiserTests {
         #expect(record.name == "Test Bridge")
         #expect(record.serviceType == .hapAccessory)
         #expect(record.port == 51826)
+        // HAP must advertise on all interfaces so iOS can discover it on any NIC
+        #expect(record.advertiseOnAllInterfaces == true)
     }
 
     @Test("TXT records contain all required keys")
