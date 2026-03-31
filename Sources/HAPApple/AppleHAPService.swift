@@ -77,6 +77,11 @@ public actor AppleHAPService {
         )
     }
 
+    // MARK: - Port
+
+    /// The TCP port the server is listening on. Zero until ``start(port:)`` completes.
+    public nonisolated var port: UInt16 { server.port }
+
     // MARK: - Lifecycle
 
     public func start(port: UInt16 = 0) async throws {
