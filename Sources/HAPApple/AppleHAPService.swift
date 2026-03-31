@@ -19,12 +19,14 @@ public actor AppleHAPService {
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
     private let deviceID: String
+    private let setupID: String
     private let logger: Logger
 
     public init(
         info: AccessoryInfo,
         setupCode: String,
         deviceID: String,
+        setupID: String = "ACMN",
         identity: HAPIdentity? = nil,
         pairingStore: (any PairingStore)? = nil,
         logger: Logger = Logger(label: "hap.apple")
@@ -38,6 +40,7 @@ public actor AppleHAPService {
         self.identity = identity
         self.pairingStore = pairingStore
         self.deviceID = deviceID
+        self.setupID = setupID
         self.logger = logger
         self.advertiser = HAPAdvertiser(discovery: discovery, deviceID: deviceID)
         self.server = AppleTCPServer(
@@ -55,6 +58,7 @@ public actor AppleHAPService {
         bridge: HAPBridge,
         setupCode: String,
         deviceID: String,
+        setupID: String = "ACMN",
         identity: HAPIdentity? = nil,
         pairingStore: (any PairingStore)? = nil,
         logger: Logger = Logger(label: "hap.apple")
@@ -67,6 +71,7 @@ public actor AppleHAPService {
         self.identity = identity
         self.pairingStore = pairingStore
         self.deviceID = deviceID
+        self.setupID = setupID
         self.logger = logger
         self.advertiser = HAPAdvertiser(discovery: discovery, deviceID: deviceID)
         self.server = AppleTCPServer(
@@ -95,6 +100,7 @@ public actor AppleHAPService {
             name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
             port: actualPort,
             category: await bridge.category,
+            setupID: setupID,
             isPaired: isPaired
         )
 

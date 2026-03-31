@@ -3,6 +3,7 @@
 
 import Foundation
 import HAPCore
+import HAPCrypto
 import MDNSCore
 
 // MARK: - ServiceType Extension
@@ -26,9 +27,11 @@ public struct HAPAdvertiser: Sendable {
         name: String,
         port: UInt16,
         category: HAPCategory,
+        setupID: String = "ACMN",
         configNumber: Int = 1,
         isPaired: Bool = false
     ) async throws {
+        let sh = HAPKeyDerivation.setupHash(setupID: setupID, deviceID: deviceID)
         let record = ServiceRecord(
             name: name,
             serviceType: .hapAccessory,
@@ -43,6 +46,7 @@ public struct HAPAdvertiser: Sendable {
                 "s#": "1",
                 "sf": isPaired ? "0" : "1",
                 "ci": String(category.rawValue),
+                "sh": sh,
             ],
             advertiseOnAllInterfaces: true
         )

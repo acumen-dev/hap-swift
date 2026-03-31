@@ -89,6 +89,9 @@ struct HAPAdvertiserTests {
         #expect(txt["pv"] == "1.1")
         #expect(txt["s#"] == "1")
         #expect(txt["ci"] == "2")  // bridge
+        // sh (setup hash) must be present — iOS requires it to bind QR code to service
+        #expect(txt["sh"] != nil)
+        #expect(txt["sh"]?.isEmpty == false)
     }
 
     @Test("unpaired — sf=1")

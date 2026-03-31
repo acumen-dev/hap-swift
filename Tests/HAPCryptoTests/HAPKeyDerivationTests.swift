@@ -46,4 +46,25 @@ struct HAPKeyDerivationTests {
 
         #expect(bytes1 == bytes2)
     }
+
+    @Test("setupHash produces 6-char base64 string")
+    func setupHashLength() {
+        let hash = HAPKeyDerivation.setupHash(setupID: "ACMN", deviceID: "AA:BB:CC:DD:EE:FF")
+        // 4 bytes → 6 base64 chars (with 2 padding = chars) = 8 total, but base64 of 4 bytes is exactly 8 chars
+        #expect(hash.count == 8)
+    }
+
+    @Test("setupHash is deterministic")
+    func setupHashDeterministic() {
+        let h1 = HAPKeyDerivation.setupHash(setupID: "ACMN", deviceID: "AA:BB:CC:DD:EE:FF")
+        let h2 = HAPKeyDerivation.setupHash(setupID: "ACMN", deviceID: "AA:BB:CC:DD:EE:FF")
+        #expect(h1 == h2)
+    }
+
+    @Test("setupHash differs for different setup IDs")
+    func setupHashVariesWithSetupID() {
+        let h1 = HAPKeyDerivation.setupHash(setupID: "ACMN", deviceID: "AA:BB:CC:DD:EE:FF")
+        let h2 = HAPKeyDerivation.setupHash(setupID: "WXYZ", deviceID: "AA:BB:CC:DD:EE:FF")
+        #expect(h1 != h2)
+    }
 }

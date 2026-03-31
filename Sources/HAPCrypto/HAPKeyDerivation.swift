@@ -51,6 +51,25 @@ public enum HAPKeyDerivation {
         )
     }
 
+    // MARK: - Setup Hash
+
+    /// Compute the HAP setup hash for the mDNS `sh` TXT record.
+    ///
+    /// Per HAP spec §5.3.3.4:
+    /// ```
+    /// sh = base64(SHA-512(setupID + deviceID)[0...3])
+    /// ```
+    /// This allows iOS to cryptographically bind a scanned QR code to the
+    /// specific accessory advertising on the network. Without `sh`, iOS cannot
+    /// verify the QR matches the discovered `_hap._tcp` service and will spin
+    /// indefinitely on "Connecting...".
+    public static func setupHash(setupID: String, deviceID: String) -> String {
+        let input = Data((setupID + deviceID).utf8)
+        let digest = SHA512.hash(data: input)
+        let first4 = Data(digest.prefix(4))
+        return first4.base64EncodedString()
+    }
+
     public static func deriveSessionKeys(
         from sharedSecret: Data
     ) -> (writeKey: SymmetricKey, readKey: SymmetricKey) {
