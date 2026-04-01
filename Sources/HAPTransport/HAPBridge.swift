@@ -14,6 +14,70 @@ public actor HAPBridge {
     private var writeHandlers: [String: @Sendable (HAPCharacteristicValue) async throws -> Void] = [:]
     public let category: HAPCategory
 
+    // MARK: - Configuration number (c#)
+
+    /// HAP configuration number — incremented when the accessory database changes.
+    /// Persisted across restarts so paired iOS devices know to re-read /accessories.
+    private var configurationNumber: Int = 1
+
+    /// The current configuration number for mDNS advertisement.
+    public var currentConfigurationNumber: Int { configurationNumber }
+
+    /// Restore a previously persisted configuration number (call before adding accessories).
+    public func restoreConfigurationNumber(_ n: Int) {
+        configurationNumber = max(1, n)
+    }
+
+    // MARK: - Accessory change handlers
+
+    /// Callbacks fired when the accessory database changes (add/remove).
+    /// Parameter is the new configuration number.
+    private var accessoryChangeHandlers: [@Sendable (Int) async -> Void] = []
+
+    /// Register a handler called when accessories are added or removed.
+    /// Multiple handlers can be registered (e.g., re-advertisement + persistence).
+    public func addAccessoryChangeHandler(_ handler: @escaping @Sendable (Int) async -> Void) {
+        accessoryChangeHandlers.append(handler)
+    }
+
+    // MARK: - Batch updates
+
+    private var isBatching = false
+    private var batchDirty = false
+
+    /// Begin a batch update — suppresses c# increment and change notifications
+    /// until ``endBatchUpdate()`` is called.
+    public func beginBatchUpdate() {
+        isBatching = true
+        batchDirty = false
+    }
+
+    /// End a batch update — increments c# once and fires change handlers if
+    /// any accessories were added or removed during the batch.
+    public func endBatchUpdate() async {
+        isBatching = false
+        guard batchDirty else { return }
+        batchDirty = false
+        configurationNumber += 1
+        await notifyAccessoryChange()
+    }
+
+    private func incrementAndNotify() async {
+        if isBatching {
+            batchDirty = true
+        } else {
+            configurationNumber += 1
+            await notifyAccessoryChange()
+        }
+    }
+
+    private func notifyAccessoryChange() async {
+        let cn = configurationNumber
+        for handler in accessoryChangeHandlers {
+            await handler(cn)
+        }
+    }
+
     // MARK: - Event subscriptions
 
     /// Maps "aid.iid" → set of connection IDs that subscribed to events.
@@ -55,10 +119,35 @@ public actor HAPBridge {
 
     // MARK: - Accessory Management
 
+    /// Add an accessory to the bridge.
+    ///
+    /// - Parameters:
+    ///   - info: Accessory metadata (name, manufacturer, etc.).
+    ///   - services: HAP services to expose (e.g., lightbulb, motion sensor).
+    ///   - aid: Explicit accessory ID. When `nil`, auto-assigns the next available AID.
+    ///          Use explicit AIDs for AID stability across restarts.
+    /// - Returns: The assigned accessory ID.
     @discardableResult
-    public func addAccessory(info: AccessoryInfo, services: [HAPService]) -> UInt64 {
-        let aid = nextAID
-        nextAID += 1
+    public func addAccessory(info: AccessoryInfo, services: [HAPService], aid: UInt64? = nil) async -> UInt64 {
+        let aid: UInt64 = if let explicit = aid {
+            explicit
+        } else {
+            { let a = nextAID; nextAID += 1; return a }()
+        }
+
+        // Keep nextAID ahead of any explicit AID to prevent collisions.
+        if aid >= nextAID {
+            nextAID = aid + 1
+        }
+
+        guard aid != 1 else {
+            logger.warning("Cannot add accessory with AID=1 (reserved for bridge)")
+            return aid
+        }
+
+        if accessories[aid] != nil {
+            logger.warning("Replacing existing accessory at AID=\(aid)")
+        }
 
         // Build accessory information service
         let infoService = HAPService.accessoryInformation(
@@ -95,12 +184,27 @@ public actor HAPBridge {
         let accessory = HAPAccessory(aid: aid, services: allServices)
         accessories[aid] = accessory
 
+        await incrementAndNotify()
+
         return aid
     }
 
-    public func removeAccessory(aid: UInt64) {
+    /// Remove an accessory from the bridge.
+    ///
+    /// Also cleans up associated write handlers and event subscriptions.
+    /// The bridge accessory (AID=1) cannot be removed.
+    public func removeAccessory(aid: UInt64) async {
         guard aid != 1 else { return }  // Cannot remove bridge
-        accessories.removeValue(forKey: aid)
+        guard accessories.removeValue(forKey: aid) != nil else { return }
+
+        // Clean up write handlers for this accessory
+        let aidPrefix = "\(aid)."
+        writeHandlers = writeHandlers.filter { !$0.key.hasPrefix(aidPrefix) }
+
+        // Clean up event subscriptions for this accessory
+        subscriptions = subscriptions.filter { !$0.key.hasPrefix(aidPrefix) }
+
+        await incrementAndNotify()
     }
 
     // MARK: - Accessory Database

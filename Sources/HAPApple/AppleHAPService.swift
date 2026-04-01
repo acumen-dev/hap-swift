@@ -106,11 +106,29 @@ public actor AppleHAPService {
             let isPaired = await pairingStore.isPaired
             let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
             let category = await bridge.category
+            let configNumber = await bridge.currentConfigurationNumber
             try? await advertiser.advertise(
                 name: name,
                 port: server.port,
                 category: category,
                 setupID: setupID,
+                configNumber: configNumber,
+                isPaired: isPaired
+            )
+        }
+
+        // Wire accessory change handler — re-advertise with updated c# when
+        // accessories are added or removed so paired iOS devices re-read /accessories.
+        await bridge.addAccessoryChangeHandler { [advertiser, bridge, pairingStore, setupID, server] configNumber in
+            let isPaired = await pairingStore.isPaired
+            let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
+            let category = await bridge.category
+            try? await advertiser.advertise(
+                name: name,
+                port: server.port,
+                category: category,
+                setupID: setupID,
+                configNumber: configNumber,
                 isPaired: isPaired
             )
         }
@@ -127,11 +145,13 @@ public actor AppleHAPService {
         let actualPort = server.port
 
         let isPaired = await pairingStore.isPaired
+        let configNumber = await bridge.currentConfigurationNumber
         try await advertiser.advertise(
             name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
             port: actualPort,
             category: await bridge.category,
             setupID: setupID,
+            configNumber: configNumber,
             isPaired: isPaired
         )
 
@@ -147,12 +167,24 @@ public actor AppleHAPService {
     // MARK: - Accessory Management
 
     @discardableResult
-    public func addAccessory(info: AccessoryInfo, services: [HAPService]) async -> UInt64 {
-        await bridge.addAccessory(info: info, services: services)
+    public func addAccessory(info: AccessoryInfo, services: [HAPService], aid: UInt64? = nil) async -> UInt64 {
+        await bridge.addAccessory(info: info, services: services, aid: aid)
     }
 
     public func removeAccessory(aid: UInt64) async {
         await bridge.removeAccessory(aid: aid)
+    }
+
+    // MARK: - Batch Updates
+
+    /// Begin a batch update — suppresses re-advertisement until ``endBatchUpdate()`` is called.
+    public func beginBatchUpdate() async {
+        await bridge.beginBatchUpdate()
+    }
+
+    /// End a batch update — re-advertises once with updated configuration number.
+    public func endBatchUpdate() async {
+        await bridge.endBatchUpdate()
     }
 }
 #endif
