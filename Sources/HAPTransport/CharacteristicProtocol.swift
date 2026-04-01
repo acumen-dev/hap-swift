@@ -180,8 +180,17 @@ public struct CharacteristicProtocol: Sendable {
     }
 
     private func decodeValue(_ raw: Any) -> HAPCharacteristicValue? {
+        // Bool must be checked first — on Apple platforms, kCFBoolean is a
+        // distinct NSNumber subclass that won't match `as? Int`.
         if let v = raw as? Bool { return .bool(v) }
-        if let v = raw as? Int { return .int32(Int32(v)) }
+        if let v = raw as? Int {
+            // Most HAP writable characteristics are uint8 (brightness, target
+            // states, fan speed, etc.).  Decode to the narrowest unsigned type
+            // that fits so write handlers can pattern-match directly.
+            if v >= 0, v <= Int(UInt8.max)  { return .uint8(UInt8(v)) }
+            if v >= 0, v <= Int(UInt16.max) { return .uint16(UInt16(v)) }
+            return .int32(Int32(v))
+        }
         if let v = raw as? Double { return .float(v) }
         if let v = raw as? String { return .string(v) }
         return nil
