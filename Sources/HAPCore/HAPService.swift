@@ -46,7 +46,7 @@ extension HAPService {
             HAPCharacteristic(
                 iid: startIID + 1,
                 type: .version,
-                value: .string("01.01.000"),
+                value: .string("1.1.0"),
                 permissions: [.read],
                 format: .string
             ),
