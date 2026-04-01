@@ -124,7 +124,9 @@ private actor HAPConnectionContext {
                 if let keys = await pairVerifyStateMachine.sessionKeys() {
                     await session.establishSession(readKey: keys.readKey, writeKey: keys.writeKey)
                     logger.info("Connection \(connectionID): session encryption established")
-                    await self.onSessionEstablished?()
+                    if let callback = self.onSessionEstablished {
+                        Task { await callback() }
+                    }
                 }
             }
         }
