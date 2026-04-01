@@ -3,14 +3,33 @@
 
 import Foundation
 import HAPCore
+import Logging
 
 // MARK: - HAPBridge
 
 public actor HAPBridge {
+    private let logger = Logger(label: "hap.bridge")
     private var accessories: [UInt64: HAPAccessory] = [:]
     private var nextAID: UInt64 = 2
     private var writeHandlers: [String: @Sendable (HAPCharacteristicValue) async throws -> Void] = [:]
     public let category: HAPCategory
+
+    // MARK: - Event subscriptions
+
+    /// Maps "aid.iid" → set of connection IDs that subscribed to events.
+    private var subscriptions: [String: Set<Int>] = [:]
+
+    /// Called when a characteristic value changes and subscribers exist.
+    /// Parameters: set of connection IDs, serialised EVENT/1.0 payload (pre-JSON,
+    /// needs encryption per-connection).
+    private var onCharacteristicChange: (@Sendable (_ subscribers: Set<Int>, _ eventData: Data) async -> Void)?
+
+    /// Set the handler called when a subscribed characteristic value changes.
+    public func setCharacteristicChangeHandler(
+        _ handler: @escaping @Sendable (_ subscribers: Set<Int>, _ eventData: Data) async -> Void
+    ) {
+        onCharacteristicChange = handler
+    }
 
     private static func handlerKey(aid: UInt64, iid: UInt64) -> String {
         "\(aid).\(iid)"
@@ -149,11 +168,91 @@ public actor HAPBridge {
         for serviceIndex in 0 ..< accessory.services.count {
             for charIndex in 0 ..< accessory.services[serviceIndex].characteristics.count {
                 if accessory.services[serviceIndex].characteristics[charIndex].iid == iid {
+                    let oldValue = accessory.services[serviceIndex].characteristics[charIndex].value
                     accessory.services[serviceIndex].characteristics[charIndex].value = value
                     accessories[aid] = accessory
+
+                    // Notify subscribers if value changed
+                    if oldValue != value {
+                        notifySubscribers(aid: aid, iid: iid, value: value)
+                    }
                     return
                 }
             }
         }
+    }
+
+    // MARK: - Event Subscriptions
+
+    public func subscribe(connectionID: Int, aid: UInt64, iid: UInt64) {
+        let key = Self.handlerKey(aid: aid, iid: iid)
+        subscriptions[key, default: []].insert(connectionID)
+        logger.info("Event subscribe: connection \(connectionID) → aid=\(aid) iid=\(iid)")
+    }
+
+    public func unsubscribe(connectionID: Int, aid: UInt64, iid: UInt64) {
+        let key = Self.handlerKey(aid: aid, iid: iid)
+        subscriptions[key]?.remove(connectionID)
+    }
+
+    /// Remove all subscriptions for a disconnected connection.
+    public func unsubscribeAll(connectionID: Int) {
+        for key in subscriptions.keys {
+            subscriptions[key]?.remove(connectionID)
+        }
+    }
+
+    private func notifySubscribers(aid: UInt64, iid: UInt64, value: HAPCharacteristicValue) {
+        let key = Self.handlerKey(aid: aid, iid: iid)
+        guard let subscribers = subscriptions[key], !subscribers.isEmpty else {
+            logger.debug("Event notify: aid=\(aid) iid=\(iid) — no subscribers")
+            return
+        }
+        guard let handler = onCharacteristicChange else {
+            logger.warning("Event notify: aid=\(aid) iid=\(iid) — no handler set")
+            return
+        }
+
+        logger.info("Event notify: aid=\(aid) iid=\(iid) value=\(value) → \(subscribers.count) subscriber(s)")
+        let eventData = Self.buildEventPayload(aid: aid, iid: iid, value: value)
+        let subs = subscribers
+        Task { await handler(subs, eventData) }
+    }
+
+    /// Build the raw HTTP bytes for a HAP EVENT/1.0 message.
+    ///
+    /// Format:
+    /// ```
+    /// EVENT/1.0 200 OK\r\n
+    /// Content-Type: application/hap+json\r\n
+    /// Content-Length: <len>\r\n
+    /// \r\n
+    /// {"characteristics":[{"aid":<aid>,"iid":<iid>,"value":<value>}]}
+    /// ```
+    private static func buildEventPayload(aid: UInt64, iid: UInt64, value: HAPCharacteristicValue) -> Data {
+        let jsonValue: Any = switch value {
+        case .bool(let v): v
+        case .uint8(let v): v
+        case .uint16(let v): v
+        case .uint32(let v): v
+        case .int32(let v): v
+        case .float(let v): v
+        case .string(let v): v
+        case .data(let v): v.base64EncodedString()
+        case .tlv8(let v): v.base64EncodedString()
+        }
+
+        let charDict: [String: Any] = ["aid": aid, "iid": iid, "value": jsonValue]
+        let body: [String: Any] = ["characteristics": [charDict]]
+        let jsonData = (try? JSONSerialization.data(withJSONObject: body)) ?? Data()
+
+        var event = "EVENT/1.0 200 OK\r\n"
+        event += "Content-Type: application/hap+json\r\n"
+        event += "Content-Length: \(jsonData.count)\r\n"
+        event += "\r\n"
+
+        var data = Data(event.utf8)
+        data.append(jsonData)
+        return data
     }
 }

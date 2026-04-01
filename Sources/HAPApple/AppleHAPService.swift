@@ -115,6 +115,14 @@ public actor AppleHAPService {
             )
         }
 
+        // Wire up event notifications — when characteristics change, the bridge
+        // sends encrypted EVENT/1.0 messages to subscribed connections.
+        await bridge.setCharacteristicChangeHandler { [server] subscribers, eventData in
+            for connectionID in subscribers {
+                await server.sendEvent(eventData, to: connectionID)
+            }
+        }
+
         try await server.start(port: port)
         let actualPort = server.port
 

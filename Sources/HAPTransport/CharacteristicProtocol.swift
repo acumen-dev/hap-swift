@@ -15,6 +15,7 @@ public struct CharacteristicProtocol: Sendable {
     private let pairingStore: any PairingStore
     private let identity: HAPIdentity
     private let onPairingChange: (@Sendable () async -> Void)?
+    let connectionID: Int
     private let logger = Logger(label: "hap.characteristic")
 
     public init(
@@ -23,6 +24,7 @@ public struct CharacteristicProtocol: Sendable {
         pairVerifyStateMachine: PairVerifyStateMachine,
         pairingStore: any PairingStore,
         identity: HAPIdentity,
+        connectionID: Int = 0,
         onPairingChange: (@Sendable () async -> Void)? = nil
     ) {
         self.bridge = bridge
@@ -30,6 +32,7 @@ public struct CharacteristicProtocol: Sendable {
         self.pairVerifyStateMachine = pairVerifyStateMachine
         self.pairingStore = pairingStore
         self.identity = identity
+        self.connectionID = connectionID
         self.onPairingChange = onPairingChange
     }
 
@@ -228,28 +231,35 @@ public struct CharacteristicProtocol: Sendable {
             return HTTPProtocol.errorResponse(status: 400, message: "Bad Request")
         }
 
-        logger.debug("PUT /characteristics: \(characteristics.count) characteristic(s)")
+        logger.info("PUT /characteristics: \(characteristics.count) characteristic(s)")
 
         for charDict in characteristics {
             guard let aid = charDict["aid"] as? UInt64 ?? (charDict["aid"] as? Int).map(UInt64.init),
                   let iid = charDict["iid"] as? UInt64 ?? (charDict["iid"] as? Int).map(UInt64.init) else {
-                logger.debug("PUT /characteristics: skipping entry with missing aid/iid: \(charDict)")
+                logger.warning("PUT /characteristics: skipping entry with missing aid/iid: \(charDict)")
                 continue
             }
 
-            // Event subscription (ev: true/false) — no value write
+            // Event subscription (ev: true/false) — register/unregister for push notifications
             if let ev = charDict["ev"] as? Bool ?? (charDict["ev"] as? Int).map({ $0 != 0 }) {
-                logger.debug("PUT /characteristics: aid=\(aid) iid=\(iid) ev=\(ev) (event subscription)")
+                if ev {
+                    await bridge.subscribe(connectionID: connectionID, aid: aid, iid: iid)
+                } else {
+                    await bridge.unsubscribe(connectionID: connectionID, aid: aid, iid: iid)
+                }
+                logger.info("PUT /characteristics: aid=\(aid) iid=\(iid) ev=\(ev) (connection \(connectionID))")
             }
 
             if let rawValue = charDict["value"] {
                 let value = decodeValue(rawValue)
                 if let value {
-                    logger.debug("PUT /characteristics: write aid=\(aid) iid=\(iid) value=\(value)")
+                    logger.info("PUT /characteristics: write aid=\(aid) iid=\(iid) value=\(value)")
                     try await bridge.writeCharacteristic(aid: aid, iid: iid, value: value)
                 } else {
                     logger.warning("PUT /characteristics: aid=\(aid) iid=\(iid) could not decode value: \(rawValue) (type: \(type(of: rawValue)))")
                 }
+            } else {
+                logger.info("PUT /characteristics: aid=\(aid) iid=\(iid) no value field (keys: \(Array(charDict.keys)))")
             }
         }
 
@@ -312,18 +322,38 @@ public struct CharacteristicProtocol: Sendable {
     }
 
     private func decodeValue(_ raw: Any) -> HAPCharacteristicValue? {
-        // Bool must be checked first — on Apple platforms, kCFBoolean is a
-        // distinct NSNumber subclass that won't match `as? Int`.
+        // JSONSerialization returns NSNumber for JSON booleans, integers, and
+        // floats.  On Apple platforms, NSNumber(intValue: 1) as? Bool returns
+        // true — so Swift's `as? Bool` conflates JSON `1` with JSON `true`.
+        // This causes "Arm Away" (uint8 1) to decode as .bool(true), silently
+        // breaking write handlers that pattern-match .uint8.
+        //
+        // Fix: use CFBooleanGetTypeID to distinguish genuine JSON booleans
+        // (__NSCFBoolean) from integer NSNumbers (__NSCFNumber).
+        #if canImport(Darwin)
+        if let number = raw as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return .bool(number.boolValue)
+            }
+            let d = number.doubleValue
+            let i = number.intValue
+            if d == Double(i) {
+                if i >= 0, i <= Int(UInt8.max)  { return .uint8(UInt8(i)) }
+                if i >= 0, i <= Int(UInt16.max) { return .uint16(UInt16(i)) }
+                return .int32(Int32(i))
+            }
+            return .float(d)
+        }
+        #else
+        // On Linux, swift-corelibs-foundation maintains the Bool/Int distinction.
         if let v = raw as? Bool { return .bool(v) }
         if let v = raw as? Int {
-            // Most HAP writable characteristics are uint8 (brightness, target
-            // states, fan speed, etc.).  Decode to the narrowest unsigned type
-            // that fits so write handlers can pattern-match directly.
             if v >= 0, v <= Int(UInt8.max)  { return .uint8(UInt8(v)) }
             if v >= 0, v <= Int(UInt16.max) { return .uint16(UInt16(v)) }
             return .int32(Int32(v))
         }
         if let v = raw as? Double { return .float(v) }
+        #endif
         if let v = raw as? String { return .string(v) }
         return nil
     }

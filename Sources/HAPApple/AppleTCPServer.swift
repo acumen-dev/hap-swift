@@ -20,14 +20,17 @@ private actor HAPConnectionContext {
     let session = HAPSession()
     let charProtocol: CharacteristicProtocol
     let pairVerifyStateMachine: PairVerifyStateMachine
+    let connectionID: Int
     init(
         bridge: HAPBridge,
         setupCode: String,
         identity: HAPIdentity,
         pairingStore: any PairingStore,
         deviceID: String,
+        connectionID: Int,
         onPairingChange: (@Sendable () async -> Void)? = nil
     ) {
+        self.connectionID = connectionID
         let pairing = PairingStateMachine(
             setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
@@ -41,8 +44,23 @@ private actor HAPConnectionContext {
             pairVerifyStateMachine: pairVerify,
             pairingStore: pairingStore,
             identity: identity,
+            connectionID: connectionID,
             onPairingChange: onPairingChange
         )
+    }
+
+    // MARK: - Outgoing encryption (for event notifications)
+
+    /// Encrypt an outgoing EVENT payload using this connection's session keys.
+    /// Returns nil if the session is not yet encrypted (pre-pair-verify).
+    func encryptOutgoing(_ data: Data, logger: Logger, connectionID: Int) async -> Data? {
+        guard await session.isEncrypted else { return nil }
+        do {
+            return try await session.encrypt(data)
+        } catch {
+            logger.debug("Connection \(connectionID): event encryption failed: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Data processing
@@ -254,6 +272,7 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 identity: identity,
                 pairingStore: pairingStore,
                 deviceID: deviceID,
+                connectionID: id,
                 onPairingChange: self.onPairingChange
             )
             return id
@@ -321,6 +340,31 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
             return connections.removeValue(forKey: connectionID)
         }
         connection?.cancel()
+
+        // Clean up event subscriptions for this connection
+        Task {
+            await bridge.unsubscribeAll(connectionID: connectionID)
+        }
+    }
+
+    // MARK: - Event Notifications
+
+    /// Send a pre-built EVENT/1.0 payload to a specific connection, encrypted
+    /// with that connection's session keys.
+    func sendEvent(_ eventData: Data, to connectionID: Int) async {
+        let (context, connection) = lock.withLock {
+            (contexts[connectionID], connections[connectionID])
+        }
+        guard let context, let connection else { return }
+
+        let encrypted = await context.encryptOutgoing(eventData, logger: logger, connectionID: connectionID)
+        guard let encrypted else { return }
+
+        connection.send(content: encrypted, completion: .contentProcessed { [weak self] error in
+            if let error {
+                self?.logger.debug("Connection \(connectionID) event send error: \(error)")
+            }
+        })
     }
 }
 #endif
