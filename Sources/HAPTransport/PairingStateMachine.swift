@@ -22,6 +22,16 @@ public actor PairingStateMachine {
         case awaitingM5(sessionKey: Data)
         case paired
         case error
+
+        var name: String {
+            switch self {
+            case .idle: return "idle"
+            case .awaitingM3: return "awaitingM3"
+            case .awaitingM5: return "awaitingM5"
+            case .paired: return "paired"
+            case .error: return "error"
+            }
+        }
     }
 
     public init(setupCode: String, identity: HAPIdentity, pairingStore: any PairingStore, deviceID: String) {
@@ -34,37 +44,55 @@ public actor PairingStateMachine {
     }
 
     public func handleRequest(_ data: Data) async throws -> Data {
-        let items = try TLV8.decode(data)
+        logger.debug("handleRequest: \(data.count)B, current state=\(state.name)")
+
+        let items: [TLV8.Item]
+        do {
+            items = try TLV8.decode(data)
+        } catch {
+            logger.error("handleRequest: TLV8 decode failed — \(error)")
+            throw error
+        }
 
         guard let stateItem = items.first(where: { $0.type == TLV8Type.state.rawValue }),
               let stateValue = stateItem.value.first else {
+            logger.error("handleRequest: no state TLV item in \(data.count)B payload")
             throw HAPPairingError.invalidState
         }
+
+        logger.debug("handleRequest: iOS state=\(stateValue)")
 
         switch stateValue {
         case 1: return try handleM1(items)
         case 3: return try handleM3(items)
         case 5: return try await handleM5(items)
-        default: throw HAPPairingError.invalidState
+        default:
+            logger.error("handleRequest: unrecognised state value \(stateValue)")
+            throw HAPPairingError.invalidState
         }
     }
 
     // MARK: - M1 → M2
 
     private func handleM1(_ items: [TLV8.Item]) throws -> Data {
+        logger.debug("M1: received (state=\(state.name))")
+
         guard case .idle = state else {
+            logger.warning("M1: wrong state — returning error (state=\(state.name))")
             return errorResponse(state: 2, error: .unknown)
         }
 
         // Verify method is pair-setup (0x00)
         if let methodItem = items.first(where: { $0.type == TLV8Type.method.rawValue }),
            let method = methodItem.value.first, method != 0x00 {
+            logger.warning("M1: unexpected method \(method) (expected 0x00)")
             return errorResponse(state: 2, error: .unknown)
         }
 
         let server = SRPServer(setupCode: setupCode)
-
         self.state = .awaitingM3(server: server)
+
+        logger.debug("M1: sending M2 (B=\(server.serverPublicKey.count)B, salt=\(server.salt.count)B)")
 
         return TLV8.encode([
             (type: TLV8Type.state.rawValue, value: Data([0x02])),
@@ -76,15 +104,21 @@ public actor PairingStateMachine {
     // MARK: - M3 → M4
 
     private func handleM3(_ items: [TLV8.Item]) throws -> Data {
+        logger.debug("M3: received (state=\(state.name))")
+
         guard case .awaitingM3(let server) = state else {
+            logger.warning("M3: wrong state — returning error (state=\(state.name))")
             return errorResponse(state: 4, error: .unknown)
         }
 
         guard let clientPublicKey = items.first(where: { $0.type == TLV8Type.publicKey.rawValue })?.value,
               let clientProof = items.first(where: { $0.type == TLV8Type.proof.rawValue })?.value else {
+            logger.error("M3: missing publicKey or proof TLV items")
             self.state = .error
             return errorResponse(state: 4, error: .authentication)
         }
+
+        logger.debug("M3: A=\(clientPublicKey.count)B, M1=\(clientProof.count)B")
 
         do {
             let (serverProof, sessionKey) = try server.processClientProof(
@@ -93,12 +127,14 @@ public actor PairingStateMachine {
             )
 
             self.state = .awaitingM5(sessionKey: sessionKey)
+            logger.debug("M3: proof accepted — sending M4 (M2=\(serverProof.count)B), sessionKey hash \(sessionKey.prefix(4).hexString)…")
 
             return TLV8.encode([
                 (type: TLV8Type.state.rawValue, value: Data([0x04])),
                 (type: TLV8Type.proof.rawValue, value: serverProof),
             ])
         } catch {
+            logger.error("M3: proof REJECTED — \(error)")
             self.state = .error
             return errorResponse(state: 4, error: .authentication)
         }
@@ -108,7 +144,7 @@ public actor PairingStateMachine {
 
     private func handleM5(_ items: [TLV8.Item]) async throws -> Data {
         guard case .awaitingM5(let sessionKey) = state else {
-            logger.warning("M5: unexpected state (not awaitingM5)")
+            logger.warning("M5: unexpected state (not awaitingM5, got \(state.name))")
             return errorResponse(state: 6, error: .unknown)
         }
 
@@ -132,7 +168,7 @@ public actor PairingStateMachine {
             decrypted = try HAPEncryption.decrypt(ciphertext: encryptedData, key: encKey, nonce: nonce)
             logger.debug("M5: decryption succeeded (\(decrypted.count) bytes plaintext)")
         } catch {
-            logger.error("M5: decryption FAILED — \(error). encryptedData=\(encryptedData.count)B, key derived from sessionKey hash \(sessionKey.prefix(4).hexString)…")
+            logger.error("M5: decryption FAILED — \(error). encryptedData=\(encryptedData.count)B, sessionKey hash \(sessionKey.prefix(4).hexString)…")
             self.state = .error
             return errorResponse(state: 6, error: .authentication)
         }
