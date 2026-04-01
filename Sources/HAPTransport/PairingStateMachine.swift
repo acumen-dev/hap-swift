@@ -35,9 +35,10 @@ public actor PairingStateMachine {
     }
 
     public init(setupCode: String, identity: HAPIdentity, pairingStore: any PairingStore, deviceID: String) {
-        // HAP SRP uses the raw 8-digit PIN without any separator characters.
-        // Strip dashes so "031-45-154" and "03145154" both work correctly.
-        self.setupCode = setupCode.filter(\.isNumber)
+        // HAP SRP uses the setup code in its display format (XXX-XX-XXX) including
+        // dashes as the SRP password. All reference implementations (hap-nodejs,
+        // HAP-python, esp-homekit) pass the formatted string with dashes to SRP.
+        self.setupCode = setupCode
         self.identity = identity
         self.pairingStore = pairingStore
         self.deviceID = deviceID
