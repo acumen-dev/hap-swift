@@ -20,14 +20,17 @@ private actor HAPConnectionContext {
     let session = HAPSession()
     let charProtocol: CharacteristicProtocol
     let pairVerifyStateMachine: PairVerifyStateMachine
+    let onSessionEstablished: (@Sendable () async -> Void)?
 
     init(
         bridge: HAPBridge,
         setupCode: String,
         identity: HAPIdentity,
         pairingStore: any PairingStore,
-        deviceID: String
+        deviceID: String,
+        onSessionEstablished: (@Sendable () async -> Void)? = nil
     ) {
+        self.onSessionEstablished = onSessionEstablished
         let pairing = PairingStateMachine(
             setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
         )
@@ -121,6 +124,7 @@ private actor HAPConnectionContext {
                 if let keys = await pairVerifyStateMachine.sessionKeys() {
                     await session.establishSession(readKey: keys.readKey, writeKey: keys.writeKey)
                     logger.info("Connection \(connectionID): session encryption established")
+                    await self.onSessionEstablished?()
                 }
             }
         }
@@ -147,6 +151,10 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private let deviceID: String
 
     private var _port: UInt16 = 0
+
+    /// Called when a pair-verify session is first established (i.e. after pairing).
+    /// Used by AppleHAPService to re-advertise mDNS with sf=0.
+    public var onSessionEstablished: (@Sendable () async -> Void)?
 
     public var port: UInt16 {
         lock.withLock { _port }
@@ -244,7 +252,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 setupCode: setupCode,
                 identity: identity,
                 pairingStore: pairingStore,
-                deviceID: deviceID
+                deviceID: deviceID,
+                onSessionEstablished: onSessionEstablished
             )
             return id
         }
