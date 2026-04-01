@@ -57,10 +57,12 @@ private actor HAPConnectionContext {
                 // prefix is removed from self.buffer after the call, so any bytes appended
                 // by a concurrent task during the await are preserved.
                 let bytesAvailable = buffer.count
+                logger.trace("Connection \(connectionID): encrypted data received (\(bytesAvailable) bytes buffered)")
                 var localBuffer = buffer
                 let plaintext: Data
                 do {
                     guard let decrypted = try await session.decryptFrame(from: &localBuffer) else {
+                        logger.trace("Connection \(connectionID): incomplete encrypted frame, waiting for more data")
                         break // incomplete frame — wait for more data
                     }
                     plaintext = decrypted
@@ -70,9 +72,10 @@ private actor HAPConnectionContext {
                 }
                 let consumed = bytesAvailable - localBuffer.count
                 buffer.removeFirst(consumed)
+                logger.debug("Connection \(connectionID): decrypted \(plaintext.count) bytes (\(consumed) bytes consumed)")
 
                 guard let request = HTTPProtocol.parseRequest(from: plaintext) else {
-                    logger.debug("Connection \(connectionID): failed to parse decrypted request")
+                    logger.debug("Connection \(connectionID): failed to parse decrypted request (\(plaintext.count) bytes plaintext)")
                     break
                 }
 

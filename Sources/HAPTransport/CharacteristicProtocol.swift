@@ -4,6 +4,7 @@
 import Foundation
 import HAPCore
 import HAPCrypto
+import Logging
 
 // MARK: - CharacteristicProtocol
 
@@ -11,6 +12,7 @@ public struct CharacteristicProtocol: Sendable {
     private let bridge: HAPBridge
     private let pairingStateMachine: PairingStateMachine
     private let pairVerifyStateMachine: PairVerifyStateMachine
+    private let logger = Logger(label: "hap.characteristic")
 
     public init(
         bridge: HAPBridge,
@@ -23,6 +25,7 @@ public struct CharacteristicProtocol: Sendable {
     }
 
     public func handleRequest(_ request: HTTPRequest) async throws -> HTTPResponse {
+        logger.debug("\(request.method) \(request.path) (\(request.body.count) bytes)")
         switch (request.method, request.path) {
         case ("POST", "/pair-setup"):
             return try await handlePairSetup(request)
@@ -35,6 +38,7 @@ public struct CharacteristicProtocol: Sendable {
         case ("PUT", "/characteristics"):
             return try await handlePutCharacteristics(request)
         default:
+            logger.warning("Unhandled request: \(request.method) \(request.path)")
             return HTTPProtocol.errorResponse(status: 404, message: "Not Found")
         }
     }
@@ -104,19 +108,31 @@ public struct CharacteristicProtocol: Sendable {
     private func handlePutCharacteristics(_ request: HTTPRequest) async throws -> HTTPResponse {
         guard let parsed = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
               let characteristics = parsed["characteristics"] as? [[String: Any]] else {
+            logger.warning("PUT /characteristics: failed to parse JSON body (\(request.body.count) bytes)")
             return HTTPProtocol.errorResponse(status: 400, message: "Bad Request")
         }
+
+        logger.debug("PUT /characteristics: \(characteristics.count) characteristic(s)")
 
         for charDict in characteristics {
             guard let aid = charDict["aid"] as? UInt64 ?? (charDict["aid"] as? Int).map(UInt64.init),
                   let iid = charDict["iid"] as? UInt64 ?? (charDict["iid"] as? Int).map(UInt64.init) else {
+                logger.debug("PUT /characteristics: skipping entry with missing aid/iid: \(charDict)")
                 continue
+            }
+
+            // Event subscription (ev: true/false) — no value write
+            if let ev = charDict["ev"] as? Bool ?? (charDict["ev"] as? Int).map({ $0 != 0 }) {
+                logger.debug("PUT /characteristics: aid=\(aid) iid=\(iid) ev=\(ev) (event subscription)")
             }
 
             if let rawValue = charDict["value"] {
                 let value = decodeValue(rawValue)
                 if let value {
+                    logger.debug("PUT /characteristics: write aid=\(aid) iid=\(iid) value=\(value)")
                     try await bridge.writeCharacteristic(aid: aid, iid: iid, value: value)
+                } else {
+                    logger.warning("PUT /characteristics: aid=\(aid) iid=\(iid) could not decode value: \(rawValue) (type: \(type(of: rawValue)))")
                 }
             }
         }
