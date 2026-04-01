@@ -214,19 +214,23 @@ struct IIDLayoutTests {
             services: [securityService]
         )
 
+        let identity = HAPIdentity()
+        let store = InMemoryPairingStore()
         let charProtocol = CharacteristicProtocol(
             bridge: bridge,
             pairingStateMachine: PairingStateMachine(
                 setupCode: "03145154",
-                identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore(),
+                identity: identity,
+                pairingStore: store,
                 deviceID: "AA:BB:CC:DD:EE:FF"
             ),
             pairVerifyStateMachine: PairVerifyStateMachine(
-                identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore(),
+                identity: identity,
+                pairingStore: store,
                 deviceID: "AA:BB:CC:DD:EE:FF"
-            )
+            ),
+            pairingStore: store,
+            identity: identity
         )
 
         let request = HTTPRequest(method: "GET", path: "/accessories", headers: [], body: Data())
@@ -271,19 +275,23 @@ struct IIDLayoutTests {
         }
 
         // Get IIDs from JSON
+        let identity2 = HAPIdentity()
+        let store2 = InMemoryPairingStore()
         let charProtocol = CharacteristicProtocol(
             bridge: bridge,
             pairingStateMachine: PairingStateMachine(
                 setupCode: "03145154",
-                identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore(),
+                identity: identity2,
+                pairingStore: store2,
                 deviceID: "AA:BB:CC:DD:EE:FF"
             ),
             pairVerifyStateMachine: PairVerifyStateMachine(
-                identity: HAPIdentity(),
-                pairingStore: InMemoryPairingStore(),
+                identity: identity2,
+                pairingStore: store2,
                 deviceID: "AA:BB:CC:DD:EE:FF"
-            )
+            ),
+            pairingStore: store2,
+            identity: identity2
         )
         let request = HTTPRequest(method: "GET", path: "/accessories", headers: [], body: Data())
         let response = try await charProtocol.handleRequest(request)

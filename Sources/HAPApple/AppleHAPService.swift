@@ -73,7 +73,10 @@ public actor AppleHAPService {
         self.deviceID = deviceID
         self.setupID = setupID
         self.logger = logger
-        self.advertiser = HAPAdvertiser(discovery: discovery, deviceID: deviceID)
+
+        let advertiser = HAPAdvertiser(discovery: discovery, deviceID: deviceID)
+        self.advertiser = advertiser
+
         self.server = AppleTCPServer(
             bridge: bridge,
             setupCode: setupCode,
@@ -92,6 +95,26 @@ public actor AppleHAPService {
     // MARK: - Lifecycle
 
     public func start(port: UInt16 = 0) async throws {
+        // Wire the pairing change callback now that self is fully initialized.
+        let advertiser = self.advertiser
+        let bridge = self.bridge
+        let pairingStore = self.pairingStore
+        let setupID = self.setupID
+        let server = self.server
+
+        server.onPairingChange = {
+            let isPaired = await pairingStore.isPaired
+            let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
+            let category = await bridge.category
+            try? await advertiser.advertise(
+                name: name,
+                port: server.port,
+                category: category,
+                setupID: setupID,
+                isPaired: isPaired
+            )
+        }
+
         try await server.start(port: port)
         let actualPort = server.port
 

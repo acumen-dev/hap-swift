@@ -43,7 +43,9 @@ public final class LinuxTCPServer: HAPServer, @unchecked Sendable {
         self.characteristicProtocol = CharacteristicProtocol(
             bridge: bridge,
             pairingStateMachine: pairingStateMachine,
-            pairVerifyStateMachine: pairVerifyStateMachine
+            pairVerifyStateMachine: pairVerifyStateMachine,
+            pairingStore: pairingStore,
+            identity: identity
         )
     }
 

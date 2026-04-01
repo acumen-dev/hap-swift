@@ -25,7 +25,8 @@ private actor HAPConnectionContext {
         setupCode: String,
         identity: HAPIdentity,
         pairingStore: any PairingStore,
-        deviceID: String
+        deviceID: String,
+        onPairingChange: (@Sendable () async -> Void)? = nil
     ) {
         let pairing = PairingStateMachine(
             setupCode: setupCode, identity: identity, pairingStore: pairingStore, deviceID: deviceID
@@ -37,7 +38,10 @@ private actor HAPConnectionContext {
         self.charProtocol = CharacteristicProtocol(
             bridge: bridge,
             pairingStateMachine: pairing,
-            pairVerifyStateMachine: pairVerify
+            pairVerifyStateMachine: pairVerify,
+            pairingStore: pairingStore,
+            identity: identity,
+            onPairingChange: onPairingChange
         )
     }
 
@@ -147,6 +151,9 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
     private let identity: HAPIdentity
     private let pairingStore: any PairingStore
     private let deviceID: String
+    // Set after init by AppleHAPService.start() — must be configured before
+    // any connection can trigger a pairing change.
+    var onPairingChange: (@Sendable () async -> Void)?
 
     private var _port: UInt16 = 0
 
@@ -246,7 +253,8 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                 setupCode: setupCode,
                 identity: identity,
                 pairingStore: pairingStore,
-                deviceID: deviceID
+                deviceID: deviceID,
+                onPairingChange: self.onPairingChange
             )
             return id
         }

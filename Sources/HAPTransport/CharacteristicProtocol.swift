@@ -12,16 +12,25 @@ public struct CharacteristicProtocol: Sendable {
     private let bridge: HAPBridge
     private let pairingStateMachine: PairingStateMachine
     private let pairVerifyStateMachine: PairVerifyStateMachine
+    private let pairingStore: any PairingStore
+    private let identity: HAPIdentity
+    private let onPairingChange: (@Sendable () async -> Void)?
     private let logger = Logger(label: "hap.characteristic")
 
     public init(
         bridge: HAPBridge,
         pairingStateMachine: PairingStateMachine,
-        pairVerifyStateMachine: PairVerifyStateMachine
+        pairVerifyStateMachine: PairVerifyStateMachine,
+        pairingStore: any PairingStore,
+        identity: HAPIdentity,
+        onPairingChange: (@Sendable () async -> Void)? = nil
     ) {
         self.bridge = bridge
         self.pairingStateMachine = pairingStateMachine
         self.pairVerifyStateMachine = pairVerifyStateMachine
+        self.pairingStore = pairingStore
+        self.identity = identity
+        self.onPairingChange = onPairingChange
     }
 
     public func handleRequest(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -31,6 +40,8 @@ public struct CharacteristicProtocol: Sendable {
             return try await handlePairSetup(request)
         case ("POST", "/pair-verify"):
             return try await handlePairVerify(request)
+        case ("POST", "/pairings"):
+            return try await handlePairings(request)
         case ("GET", "/accessories"):
             return try await handleGetAccessories()
         case ("GET", let path) where path.hasPrefix("/characteristics"):
@@ -55,6 +66,97 @@ public struct CharacteristicProtocol: Sendable {
     private func handlePairVerify(_ request: HTTPRequest) async throws -> HTTPResponse {
         let responseData = try await pairVerifyStateMachine.handleRequest(request.body)
         return HTTPProtocol.okResponse(body: responseData, contentType: HTTPProtocol.pairingTLV8)
+    }
+
+    // MARK: - POST /pairings (Add / Remove / List)
+
+    private func handlePairings(_ request: HTTPRequest) async throws -> HTTPResponse {
+        let items = try TLV8.decode(request.body)
+        guard let methodData = items.first(where: { $0.type == TLV8Type.method.rawValue })?.value,
+              let method = methodData.first else {
+            logger.warning("POST /pairings: missing method TLV")
+            return pairingsErrorResponse(error: .unknown)
+        }
+
+        switch method {
+        case 3: return try await handleAddPairing(items)
+        case 4: return try await handleRemovePairing(items)
+        case 5: return try await handleListPairings()
+        default:
+            logger.warning("POST /pairings: unknown method \(method)")
+            return pairingsErrorResponse(error: .unknown)
+        }
+    }
+
+    private func handleAddPairing(_ items: [TLV8.Item]) async throws -> HTTPResponse {
+        guard let identifierData = items.first(where: { $0.type == TLV8Type.identifier.rawValue })?.value,
+              let identifier = String(data: identifierData, encoding: .utf8),
+              let publicKey = items.first(where: { $0.type == TLV8Type.publicKey.rawValue })?.value else {
+            logger.warning("POST /pairings Add: missing identifier or public key")
+            return pairingsErrorResponse(error: .unknown)
+        }
+
+        let permissions = items.first(where: { $0.type == TLV8Type.permissions.rawValue })?.value.first ?? 0
+        logger.info("POST /pairings: Add pairing for '\(identifier)' (permissions: \(permissions))")
+
+        try await pairingStore.store(controllerIdentifier: identifier, publicKey: publicKey)
+        await onPairingChange?()
+
+        return HTTPProtocol.okResponse(
+            body: TLV8.encode([(type: TLV8Type.state.rawValue, value: Data([2]))]),
+            contentType: HTTPProtocol.pairingTLV8
+        )
+    }
+
+    private func handleRemovePairing(_ items: [TLV8.Item]) async throws -> HTTPResponse {
+        guard let identifierData = items.first(where: { $0.type == TLV8Type.identifier.rawValue })?.value,
+              let identifier = String(data: identifierData, encoding: .utf8) else {
+            logger.warning("POST /pairings Remove: missing identifier")
+            return pairingsErrorResponse(error: .unknown)
+        }
+
+        logger.info("POST /pairings: Remove pairing for '\(identifier)'")
+        try await pairingStore.remove(controllerIdentifier: identifier)
+
+        let stillPaired = await pairingStore.isPaired
+        logger.info("POST /pairings: pairing removed. Still paired: \(stillPaired)")
+        await onPairingChange?()
+
+        return HTTPProtocol.okResponse(
+            body: TLV8.encode([(type: TLV8Type.state.rawValue, value: Data([2]))]),
+            contentType: HTTPProtocol.pairingTLV8
+        )
+    }
+
+    private func handleListPairings() async throws -> HTTPResponse {
+        let pairings = try await pairingStore.listPairings()
+        logger.debug("POST /pairings: List (\(pairings.count) pairing(s))")
+
+        var tlvItems: [TLV8.Item] = [
+            (type: TLV8Type.state.rawValue, value: Data([2])),
+        ]
+        for (index, pairing) in pairings.enumerated() {
+            if index > 0 {
+                tlvItems.append((type: TLV8Type.separator.rawValue, value: Data()))
+            }
+            tlvItems.append((type: TLV8Type.identifier.rawValue, value: Data(pairing.identifier.utf8)))
+            tlvItems.append((type: TLV8Type.publicKey.rawValue, value: pairing.publicKey))
+            // Admin permission (0x01) — we don't track permission levels, so report all as admin
+            tlvItems.append((type: TLV8Type.permissions.rawValue, value: Data([0x01])))
+        }
+
+        return HTTPProtocol.okResponse(
+            body: TLV8.encode(tlvItems),
+            contentType: HTTPProtocol.pairingTLV8
+        )
+    }
+
+    private func pairingsErrorResponse(error: TLV8ErrorCode) -> HTTPResponse {
+        let tlv = TLV8.encode([
+            (type: TLV8Type.state.rawValue, value: Data([2])),
+            (type: TLV8Type.error.rawValue, value: Data([error.rawValue])),
+        ])
+        return HTTPProtocol.okResponse(body: tlv, contentType: HTTPProtocol.pairingTLV8)
     }
 
     // MARK: - GET /accessories

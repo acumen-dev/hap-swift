@@ -666,7 +666,7 @@ struct PairingFlowTests {
     @Test("GET /accessories over encrypted HAP session returns valid JSON")
     func getAccessoriesEncrypted() async throws {
         let setupCode = "03145154"
-        let (bridge, identity, _, pairingStateMachine, pairVerifyStateMachine) = makePairingComponents(setupCode: setupCode)
+        let (bridge, identity, pairingStore, pairingStateMachine, pairVerifyStateMachine) = makePairingComponents(setupCode: setupCode)
         let controller = HAPControllerSimulator()
 
         // 1. Full pair-setup
@@ -696,7 +696,9 @@ struct PairingFlowTests {
         let charProtocol = CharacteristicProtocol(
             bridge: bridge,
             pairingStateMachine: pairingStateMachine,
-            pairVerifyStateMachine: pairVerifyStateMachine
+            pairVerifyStateMachine: pairVerifyStateMachine,
+            pairingStore: pairingStore,
+            identity: identity
         )
 
         // 5. Controller sends encrypted GET /accessories request
