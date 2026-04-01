@@ -48,6 +48,8 @@ public struct CharacteristicProtocol: Sendable {
             return try await handleGetCharacteristics(request)
         case ("PUT", "/characteristics"):
             return try await handlePutCharacteristics(request)
+        case ("PUT", "/prepare"):
+            return try handlePrepare(request)
         default:
             logger.warning("Unhandled request: \(request.method) \(request.path)")
             return HTTPProtocol.errorResponse(status: 404, message: "Not Found")
@@ -157,6 +159,18 @@ public struct CharacteristicProtocol: Sendable {
             (type: TLV8Type.error.rawValue, value: Data([error.rawValue])),
         ])
         return HTTPProtocol.okResponse(body: tlv, contentType: HTTPProtocol.pairingTLV8)
+    }
+
+    // MARK: - PUT /prepare (Timed Writes)
+
+    /// HAP timed writes: iOS sends PUT /prepare before writing security-sensitive
+    /// characteristics (alarm, lock). We acknowledge the prepare and accept the
+    /// subsequent PUT /characteristics unconditionally — as a software bridge we
+    /// don't need to enforce the TTL window.
+    private func handlePrepare(_ request: HTTPRequest) throws -> HTTPResponse {
+        logger.debug("PUT /prepare: \(request.body.count) bytes")
+        let json = try JSONSerialization.data(withJSONObject: ["status": 0])
+        return HTTPProtocol.okResponse(body: json, contentType: HTTPProtocol.hapJSON)
     }
 
     // MARK: - GET /accessories
