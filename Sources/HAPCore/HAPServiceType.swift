@@ -22,6 +22,8 @@ extension HAPServiceType {
 
 extension HAPServiceType {
     public var fullUUID: String {
-        "0000\(rawValue)-0000-1000-8000-0026BB765291"
+        let hex = rawValue.uppercased()
+        let padded = String(repeating: "0", count: max(0, 8 - hex.count)) + hex
+        return "\(padded)-0000-1000-8000-0026BB765291"
     }
 }
