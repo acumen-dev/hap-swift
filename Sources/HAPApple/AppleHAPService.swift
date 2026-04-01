@@ -92,13 +92,6 @@ public actor AppleHAPService {
     // MARK: - Lifecycle
 
     public func start(port: UInt16 = 0) async throws {
-        // Re-advertise mDNS with sf=0 after first pair-verify session is established.
-        // HAP spec requires sf to transition from 1→0 after successful pairing.
-        server.onSessionEstablished = { [weak self] in
-            guard let self else { return }
-            await self.readvertiseAsPaired()
-        }
-
         try await server.start(port: port)
         let actualPort = server.port
 
@@ -112,23 +105,6 @@ public actor AppleHAPService {
         )
 
         logger.info("HAP service started on port \(actualPort), device ID: \(deviceID)")
-    }
-
-    private func readvertiseAsPaired() async {
-        let isPaired = await pairingStore.isPaired
-        guard isPaired else { return }
-        do {
-            try await advertiser.advertise(
-                name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
-                port: server.port,
-                category: await bridge.category,
-                setupID: setupID,
-                isPaired: true
-            )
-            logger.info("mDNS re-advertised with sf=0 (paired)")
-        } catch {
-            logger.error("Failed to re-advertise mDNS: \(error)")
-        }
     }
 
     public func stop() async {
