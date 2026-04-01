@@ -8,7 +8,7 @@ import Crypto
 
 enum SRPConstants {
     /// RFC 5054 3072-bit prime N.
-    static let N: BigInt = {
+    static let N: CryptoInt = {
         let hex = """
         FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08\
         8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B\
@@ -25,21 +25,21 @@ enum SRPConstants {
         CBBE117577A615D6C770988C0BAD946E208E24FA074E5AB3143DB5BF\
         CE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF
         """
-        return BigInt(Data(hexString: hex)!)
+        return CryptoInt(Data(hexString: hex)!)
     }()
 
     /// Generator g = 5.
-    static let g = BigInt(5)
+    static let g = CryptoInt(5)
 
     /// k = SHA512(N | pad(g))
-    static let k: BigInt = {
+    static let k: CryptoInt = {
         let nData = N.paddedData(to: 384)
         let gData = g.paddedData(to: 384)
         var hasher = SHA512()
         hasher.update(data: nData)
         hasher.update(data: gData)
         let digest = Data(hasher.finalize())
-        return BigInt(digest)
+        return CryptoInt(digest)
     }()
 
     /// Byte length of N (384 bytes for 3072-bit).
@@ -55,20 +55,20 @@ public struct SRPServer: Sendable {
     public let salt: Data
     public let serverPublicKey: Data
 
-    private let verifier: BigInt
-    private let serverPrivateKey: BigInt
-    private let serverPublicKeyBigInt: BigInt
+    private let verifier: CryptoInt
+    private let serverPrivateKey: CryptoInt
+    private let serverPublicKeyBigInt: CryptoInt
 
     public init(setupCode: String) {
         let salt = SRPServer.generateSalt()
         let x = SRPServer.computeX(salt: salt, password: setupCode)
-        let v = BigInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
 
         // Generate server private key b
-        let b = BigInt(generateRandomBytes(count: 32))
+        let b = CryptoInt(generateRandomBytes(count: 32))
 
         // B = (k*v + g^b mod N) mod N
-        let gb = BigInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
+        let gb = CryptoInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
         let kv = (SRPConstants.k * v) % SRPConstants.N
         let B = (kv + gb) % SRPConstants.N
 
@@ -82,10 +82,10 @@ public struct SRPServer: Sendable {
     /// Internal init for deterministic testing.
     init(salt: Data, setupCode: String, serverPrivateKey: Data) {
         let x = SRPServer.computeX(salt: salt, password: setupCode)
-        let v = BigInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let v = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
 
-        let b = BigInt(serverPrivateKey)
-        let gb = BigInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
+        let b = CryptoInt(serverPrivateKey)
+        let gb = CryptoInt.modPow(base: SRPConstants.g, exponent: b, modulus: SRPConstants.N)
         let kv = (SRPConstants.k * v) % SRPConstants.N
         let B = (kv + gb) % SRPConstants.N
 
@@ -100,7 +100,7 @@ public struct SRPServer: Sendable {
         clientPublicKey clientPublicKeyData: Data,
         clientProof clientProofData: Data
     ) throws -> (serverProof: Data, sessionKey: Data) {
-        let A = BigInt(clientPublicKeyData)
+        let A = CryptoInt(clientPublicKeyData)
 
         // Reject A == 0 mod N
         guard !(A % SRPConstants.N).isZero else {
@@ -113,12 +113,12 @@ public struct SRPServer: Sendable {
         var uHasher = SHA512()
         uHasher.update(data: paddedA)
         uHasher.update(data: paddedB)
-        let u = BigInt(Data(uHasher.finalize()))
+        let u = CryptoInt(Data(uHasher.finalize()))
 
         // S = (A * v^u)^b mod N
-        let vu = BigInt.modPow(base: verifier, exponent: u, modulus: SRPConstants.N)
+        let vu = CryptoInt.modPow(base: verifier, exponent: u, modulus: SRPConstants.N)
         let avu = (A * vu) % SRPConstants.N
-        let S = BigInt.modPow(base: avu, exponent: serverPrivateKey, modulus: SRPConstants.N)
+        let S = CryptoInt.modPow(base: avu, exponent: serverPrivateKey, modulus: SRPConstants.N)
 
         // K = SHA512(S)
         let sData = S.paddedData(to: SRPConstants.paddedLength)
@@ -149,7 +149,7 @@ public struct SRPServer: Sendable {
         generateRandomBytes(count: 16)
     }
 
-    static func computeX(salt: Data, password: String) -> BigInt {
+    static func computeX(salt: Data, password: String) -> CryptoInt {
         // x = SHA512(salt | SHA512("Pair-Setup" | ":" | password))
         var innerHasher = SHA512()
         innerHasher.update(data: Data(SRPConstants.username.utf8))
@@ -160,7 +160,7 @@ public struct SRPServer: Sendable {
         var outerHasher = SHA512()
         outerHasher.update(data: salt)
         outerHasher.update(data: innerHash)
-        let x = BigInt(Data(outerHasher.finalize()))
+        let x = CryptoInt(Data(outerHasher.finalize()))
         return x
     }
 
@@ -171,7 +171,7 @@ public struct SRPServer: Sendable {
         // bytes. g = 5, so its raw data is a single byte [0x05] — NOT padded to
         // 384. (Contrast with k = H(N | pad(g)) per RFC 5054 where g IS padded.)
         let nData = SRPConstants.N.data   // 384 bytes — prime fills the full width
-        let gData = SRPConstants.g.data   // [0x05] — minimal big-endian representation
+        let gData = SRPConstants.g.data   // [0x05] — minimal big-endian representation (NOT padded)
 
         let hashN = Data(SHA512.hash(data: nData))
         let hashG = Data(SHA512.hash(data: gData))
@@ -198,12 +198,12 @@ public struct SRPServer: Sendable {
 
 struct SRPClient: Sendable {
     let clientPublicKey: Data
-    private let clientPrivateKey: BigInt
-    private let clientPublicKeyBigInt: BigInt
+    private let clientPrivateKey: CryptoInt
+    private let clientPublicKeyBigInt: CryptoInt
 
     init() {
-        let a = BigInt(generateRandomBytes(count: 32))
-        let A = BigInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
+        let a = CryptoInt(generateRandomBytes(count: 32))
+        let A = CryptoInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
 
         self.clientPrivateKey = a
         self.clientPublicKeyBigInt = A
@@ -212,8 +212,8 @@ struct SRPClient: Sendable {
 
     /// Internal init for deterministic testing.
     init(clientPrivateKey: Data) {
-        let a = BigInt(clientPrivateKey)
-        let A = BigInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
+        let a = CryptoInt(clientPrivateKey)
+        let A = CryptoInt.modPow(base: SRPConstants.g, exponent: a, modulus: SRPConstants.N)
 
         self.clientPrivateKey = a
         self.clientPublicKeyBigInt = A
@@ -225,7 +225,7 @@ struct SRPClient: Sendable {
         salt: Data,
         setupCode: String
     ) throws -> (clientProof: Data, serverProofExpected: Data, sessionKey: Data) {
-        let B = BigInt(serverPublicKeyData)
+        let B = CryptoInt(serverPublicKeyData)
 
         guard !(B % SRPConstants.N).isZero else {
             throw HAPCryptoError.invalidPublicKey
@@ -238,17 +238,17 @@ struct SRPClient: Sendable {
         var uHasher = SHA512()
         uHasher.update(data: paddedA)
         uHasher.update(data: paddedB)
-        let u = BigInt(Data(uHasher.finalize()))
+        let u = CryptoInt(Data(uHasher.finalize()))
 
         // x = SHA512(salt | SHA512(I:P))
         let x = SRPServer.computeX(salt: salt, password: setupCode)
 
         // S = (B - k * g^x)^(a + u * x) mod N
-        let gx = BigInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
+        let gx = CryptoInt.modPow(base: SRPConstants.g, exponent: x, modulus: SRPConstants.N)
         let kgx = (SRPConstants.k * gx) % SRPConstants.N
 
         // Handle B - kgx (might need to add N to keep positive)
-        let base: BigInt
+        let base: CryptoInt
         if B > kgx {
             base = B - kgx
         } else {
@@ -257,7 +257,7 @@ struct SRPClient: Sendable {
 
         let ux = (u * x) % SRPConstants.N
         let exp = (clientPrivateKey + ux) % SRPConstants.N
-        let S = BigInt.modPow(base: base, exponent: exp, modulus: SRPConstants.N)
+        let S = CryptoInt.modPow(base: base, exponent: exp, modulus: SRPConstants.N)
 
         // K = SHA512(S)
         let sData = S.paddedData(to: SRPConstants.paddedLength)
