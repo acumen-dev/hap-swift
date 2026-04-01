@@ -130,6 +130,16 @@ public struct SRPServer: Sendable {
         )
 
         guard clientProofData == expectedM1 else {
+            // Diagnostic dump — compare intermediate values against hap-nodejs to
+            // identify the exact point of divergence.
+            print("[SRP-DIAG] salt       = \(salt.hexString)")
+            print("[SRP-DIAG] A (first8) = \(paddedA.prefix(8).hexString)")
+            print("[SRP-DIAG] B (first8) = \(paddedB.prefix(8).hexString)")
+            print("[SRP-DIAG] u (first8) = \(u.paddedData(to: 64).prefix(8).hexString)")
+            print("[SRP-DIAG] S (first8) = \(sData.prefix(8).hexString)")
+            print("[SRP-DIAG] K          = \(K.hexString)")
+            print("[SRP-DIAG] expectedM1 = \(expectedM1.hexString)")
+            print("[SRP-DIAG] receivedM1 = \(clientProofData.hexString)")
             throw HAPCryptoError.proofMismatch
         }
 
