@@ -21,7 +21,7 @@ extension HAPService {
         if supportsBrightness {
             chars.append(HAPCharacteristic(
                 iid: iid, type: .brightness, value: .int32(100),
-                permissions: [.read, .write, .notify], format: .int32
+                permissions: [.read, .write, .notify], format: .int
             )); iid += 1
         }
 
@@ -93,7 +93,7 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .rotationDirection, value: .int32(0),
-            permissions: [.read, .write, .notify], format: .int32
+            permissions: [.read, .write, .notify], format: .int
         )); iid += 1
 
         chars.append(HAPCharacteristic(

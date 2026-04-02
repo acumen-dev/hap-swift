@@ -28,6 +28,16 @@ public actor HAPBridge {
         configurationNumber = max(1, n)
     }
 
+    /// Reserve an AID so auto-assignment skips it.
+    ///
+    /// Call before provisioning to prevent new accessories from being
+    /// auto-assigned AIDs that belong to existing device map entries.
+    public func reserveAID(_ aid: UInt64) {
+        if aid >= nextAID {
+            nextAID = aid + 1
+        }
+    }
+
     // MARK: - Accessory change handlers
 
     /// Callbacks fired when the accessory database changes (add/remove).
@@ -196,6 +206,7 @@ public actor HAPBridge {
     public func removeAccessory(aid: UInt64) async {
         guard aid != 1 else { return }  // Cannot remove bridge
         guard accessories.removeValue(forKey: aid) != nil else { return }
+        logger.warning("Removed accessory AID=\(aid). Remaining: \(accessories.keys.sorted())")
 
         // Clean up write handlers for this accessory
         let aidPrefix = "\(aid)."

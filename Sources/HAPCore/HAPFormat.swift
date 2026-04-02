@@ -6,7 +6,8 @@ public enum HAPFormat: String, Sendable, Codable {
     case uint8
     case uint16
     case uint32
-    case int32
+    /// Signed 32-bit integer. HAP spec wire format is `"int"`.
+    case int
     case float
     case string
     case data

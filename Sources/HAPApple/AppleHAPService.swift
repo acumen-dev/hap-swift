@@ -117,9 +117,12 @@ public actor AppleHAPService {
             )
         }
 
-        // Wire accessory change handler — re-advertise with updated c# when
-        // accessories are added or removed so paired iOS devices re-read /accessories.
+        // Wire accessory change handler — stop and re-advertise with updated c#
+        // when accessories are added or removed. A full stop+re-advertise cycle is
+        // required (not just a TXT record update) for iOS to re-read /accessories
+        // and discover newly added bridged accessories.
         await bridge.addAccessoryChangeHandler { [advertiser, bridge, pairingStore, setupID, server] configNumber in
+            await advertiser.stopAdvertising()
             let isPaired = await pairingStore.isPaired
             let name = await bridge.accessoryDatabase().first?.name ?? "HAP Bridge"
             let category = await bridge.category
@@ -173,6 +176,27 @@ public actor AppleHAPService {
 
     public func removeAccessory(aid: UInt64) async {
         await bridge.removeAccessory(aid: aid)
+    }
+
+    // MARK: - Re-advertisement
+
+    /// Re-advertise the service with current state.
+    ///
+    /// Call after externally modifying the pairing store (e.g., clearing all
+    /// pairings via an admin flow) so the mDNS TXT record reflects the new
+    /// pairing status (`sf` flag) without restarting.
+    public func reAdvertise() async throws {
+        await advertiser.stopAdvertising()
+        let isPaired = await pairingStore.isPaired
+        let configNumber = await bridge.currentConfigurationNumber
+        try await advertiser.advertise(
+            name: await bridge.accessoryDatabase().first?.name ?? "HAP Bridge",
+            port: server.port,
+            category: await bridge.category,
+            setupID: setupID,
+            configNumber: configNumber,
+            isPaired: isPaired
+        )
     }
 
     // MARK: - Batch Updates

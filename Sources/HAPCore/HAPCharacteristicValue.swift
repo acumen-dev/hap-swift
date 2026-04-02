@@ -20,7 +20,7 @@ public enum HAPCharacteristicValue: Sendable, Equatable {
         case .uint8: .uint8
         case .uint16: .uint16
         case .uint32: .uint32
-        case .int32: .int32
+        case .int32: .int
         case .float: .float
         case .string: .string
         case .data: .data
