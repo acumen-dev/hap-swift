@@ -184,7 +184,12 @@ public actor HAPBridge {
                     type: char.type,
                     value: char.value,
                     permissions: char.permissions,
-                    format: char.format
+                    format: char.format,
+                    minValue: char.minValue,
+                    maxValue: char.maxValue,
+                    minStep: char.minStep,
+                    unit: char.unit,
+                    validValues: char.validValues
                 ))
                 nextIID += 1
             }
@@ -248,7 +253,10 @@ public actor HAPBridge {
                     guard accessory.services[serviceIndex].characteristics[charIndex].isWritable else {
                         throw HAPError.readOnly
                     }
-                    accessory.services[serviceIndex].characteristics[charIndex].value = value
+                    let char = accessory.services[serviceIndex].characteristics[charIndex]
+                    accessory.services[serviceIndex].characteristics[charIndex].value = value.clamped(
+                        minValue: char.minValue, maxValue: char.maxValue
+                    )
                     found = true
                     break
                 }
@@ -283,13 +291,15 @@ public actor HAPBridge {
         for serviceIndex in 0 ..< accessory.services.count {
             for charIndex in 0 ..< accessory.services[serviceIndex].characteristics.count {
                 if accessory.services[serviceIndex].characteristics[charIndex].iid == iid {
-                    let oldValue = accessory.services[serviceIndex].characteristics[charIndex].value
-                    accessory.services[serviceIndex].characteristics[charIndex].value = value
+                    let char = accessory.services[serviceIndex].characteristics[charIndex]
+                    let clamped = value.clamped(minValue: char.minValue, maxValue: char.maxValue)
+                    let oldValue = char.value
+                    accessory.services[serviceIndex].characteristics[charIndex].value = clamped
                     accessories[aid] = accessory
 
                     // Notify subscribers if value changed
-                    if oldValue != value {
-                        notifySubscribers(aid: aid, iid: iid, value: value)
+                    if oldValue != clamped {
+                        notifySubscribers(aid: aid, iid: iid, value: clamped)
                     }
                     return
                 }

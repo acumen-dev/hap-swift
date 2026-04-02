@@ -21,26 +21,33 @@ extension HAPService {
         if supportsBrightness {
             chars.append(HAPCharacteristic(
                 iid: iid, type: .brightness, value: .int32(100),
-                permissions: [.read, .write, .notify], format: .int
+                permissions: [.read, .write, .notify], format: .int,
+                minValue: 0, maxValue: 100, minStep: 1,
+                unit: .percentage
             )); iid += 1
         }
 
         if supportsColor {
             chars.append(HAPCharacteristic(
                 iid: iid, type: .hue, value: .float(0),
-                permissions: [.read, .write, .notify], format: .float
+                permissions: [.read, .write, .notify], format: .float,
+                minValue: 0, maxValue: 360, minStep: 1,
+                unit: .arcdegrees
             )); iid += 1
 
             chars.append(HAPCharacteristic(
                 iid: iid, type: .saturation, value: .float(0),
-                permissions: [.read, .write, .notify], format: .float
+                permissions: [.read, .write, .notify], format: .float,
+                minValue: 0, maxValue: 100, minStep: 1,
+                unit: .percentage
             )); iid += 1
         }
 
         if supportsColorTemperature {
             chars.append(HAPCharacteristic(
-                iid: iid, type: .colorTemperature, value: .uint32(250),
-                permissions: [.read, .write, .notify], format: .uint32
+                iid: iid, type: .colorTemperature, value: .int32(250),
+                permissions: [.read, .write, .notify], format: .int,
+                minValue: 140, maxValue: 500, minStep: 1
             )); iid += 1
         }
 
@@ -83,22 +90,27 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .active, value: .uint8(0),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 1
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .rotationSpeed, value: .float(0),
-            permissions: [.read, .write, .notify], format: .float
+            permissions: [.read, .write, .notify], format: .float,
+            minValue: 0, maxValue: 100, minStep: 1,
+            unit: .percentage
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .rotationDirection, value: .int32(0),
-            permissions: [.read, .write, .notify], format: .int
+            permissions: [.read, .write, .notify], format: .int,
+            minValue: 0, maxValue: 1
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .swingMode, value: .uint8(0),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 1
         ))
 
         return HAPService(type: .fanV2, characteristics: chars)
@@ -110,27 +122,35 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentTemperature, value: .float(20),
-            permissions: [.read, .notify], format: .float
+            permissions: [.read, .notify], format: .float,
+            minValue: 0, maxValue: 100, minStep: 0.1,
+            unit: .celsius
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .targetTemperature, value: .float(20),
-            permissions: [.read, .write, .notify], format: .float
+            permissions: [.read, .write, .notify], format: .float,
+            minValue: 10, maxValue: 38, minStep: 0.1,
+            unit: .celsius
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentHeatingCoolingState, value: .uint8(0),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 2
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .targetHeatingCoolingState, value: .uint8(0),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 3
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentRelativeHumidity, value: .float(50),
-            permissions: [.read, .notify], format: .float
+            permissions: [.read, .notify], format: .float,
+            minValue: 0, maxValue: 100, minStep: 1,
+            unit: .percentage
         ))
 
         return HAPService(type: .thermostat, characteristics: chars)
@@ -146,12 +166,14 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .lockCurrentState, value: .uint8(3),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 3
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .lockTargetState, value: .uint8(1),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 1
         ))
 
         return HAPService(type: .doorLock, characteristics: chars)
@@ -163,17 +185,22 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentPosition, value: .uint8(0),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 100, minStep: 1,
+            unit: .percentage
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .targetPosition, value: .uint8(0),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 100, minStep: 1,
+            unit: .percentage
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .positionState, value: .uint8(2),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 2
         ))
 
         return HAPService(type: .windowCovering, characteristics: chars)
@@ -196,7 +223,9 @@ extension HAPService {
         HAPService(type: .temperatureSensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .currentTemperature, value: .float(20),
-                permissions: [.read, .notify], format: .float
+                permissions: [.read, .notify], format: .float,
+                minValue: 0, maxValue: 100, minStep: 0.1,
+                unit: .celsius
             ),
         ])
     }
@@ -205,7 +234,9 @@ extension HAPService {
         HAPService(type: .humiditySensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .currentRelativeHumidity, value: .float(50),
-                permissions: [.read, .notify], format: .float
+                permissions: [.read, .notify], format: .float,
+                minValue: 0, maxValue: 100, minStep: 1,
+                unit: .percentage
             ),
         ])
     }
@@ -214,7 +245,8 @@ extension HAPService {
         HAPService(type: .contactSensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .contactSensorState, value: .uint8(0),
-                permissions: [.read, .notify], format: .uint8
+                permissions: [.read, .notify], format: .uint8,
+                minValue: 0, maxValue: 1
             ),
         ])
     }
@@ -223,7 +255,8 @@ extension HAPService {
         HAPService(type: .leakSensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .leakDetected, value: .uint8(0),
-                permissions: [.read, .notify], format: .uint8
+                permissions: [.read, .notify], format: .uint8,
+                minValue: 0, maxValue: 1
             ),
         ])
     }
@@ -232,7 +265,8 @@ extension HAPService {
         HAPService(type: .smokeSensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .smokeDetected, value: .uint8(0),
-                permissions: [.read, .notify], format: .uint8
+                permissions: [.read, .notify], format: .uint8,
+                minValue: 0, maxValue: 1
             ),
         ])
     }
@@ -241,7 +275,8 @@ extension HAPService {
         HAPService(type: .carbonMonoxideSensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .carbonMonoxideDetected, value: .uint8(0),
-                permissions: [.read, .notify], format: .uint8
+                permissions: [.read, .notify], format: .uint8,
+                minValue: 0, maxValue: 1
             ),
         ])
     }
@@ -250,7 +285,8 @@ extension HAPService {
         HAPService(type: .occupancySensor, characteristics: [
             HAPCharacteristic(
                 iid: startIID, type: .occupancyDetected, value: .uint8(0),
-                permissions: [.read, .notify], format: .uint8
+                permissions: [.read, .notify], format: .uint8,
+                minValue: 0, maxValue: 1
             ),
         ])
     }
@@ -270,7 +306,9 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .volume, value: .uint8(50),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 100, minStep: 1,
+            unit: .percentage
         ))
 
         return HAPService(type: .speaker, characteristics: chars)

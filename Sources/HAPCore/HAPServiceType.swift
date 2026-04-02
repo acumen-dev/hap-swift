@@ -1,6 +1,9 @@
 // HAPServiceType.swift
 // Copyright 2026 Monagle Pty Ltd
 
+/// A HAP service type UUID in short form (e.g. `"43"` for Lightbulb).
+///
+/// **Important — no leading zeros.** See ``HAPCharacteristicType`` for details.
 public struct HAPServiceType: RawRepresentable, Sendable, Hashable {
     public let rawValue: String
 

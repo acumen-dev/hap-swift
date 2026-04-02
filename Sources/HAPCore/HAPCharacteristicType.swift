@@ -1,6 +1,12 @@
 // HAPCharacteristicType.swift
 // Copyright 2026 Monagle Pty Ltd
 
+/// A HAP characteristic type UUID in short form (e.g. `"25"` for On).
+///
+/// **Important — no leading zeros.** The HAP spec short form strips leading
+/// zeros from the UUID prefix: use `"8"` not `"08"`, `"E"` not `"0E"`.
+/// iOS rejects the entire bridge as "Accessory out of compliance" if any
+/// characteristic type has a leading zero. This has bitten us twice.
 public struct HAPCharacteristicType: RawRepresentable, Sendable, Hashable {
     public let rawValue: String
 

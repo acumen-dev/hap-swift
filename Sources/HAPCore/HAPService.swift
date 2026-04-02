@@ -59,17 +59,20 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentSecuritySystemState, value: .uint8(3),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 4
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .targetSecuritySystemState, value: .uint8(3),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 3
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .securitySystemAlarmType, value: .uint8(0),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 1
         ))
 
         return HAPService(type: .securitySystem, characteristics: chars)
@@ -81,12 +84,14 @@ extension HAPService {
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .currentDoorState, value: .uint8(1),
-            permissions: [.read, .notify], format: .uint8
+            permissions: [.read, .notify], format: .uint8,
+            minValue: 0, maxValue: 4
         )); iid += 1
 
         chars.append(HAPCharacteristic(
             iid: iid, type: .targetDoorState, value: .uint8(1),
-            permissions: [.read, .write, .notify], format: .uint8
+            permissions: [.read, .write, .notify], format: .uint8,
+            minValue: 0, maxValue: 1
         )); iid += 1
 
         chars.append(HAPCharacteristic(

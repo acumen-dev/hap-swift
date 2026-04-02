@@ -14,7 +14,7 @@ struct HAPCharacteristicValueTests {
         #expect(HAPCharacteristicValue.uint8(0).format == .uint8)
         #expect(HAPCharacteristicValue.uint16(0).format == .uint16)
         #expect(HAPCharacteristicValue.uint32(0).format == .uint32)
-        #expect(HAPCharacteristicValue.int32(0).format == .int32)
+        #expect(HAPCharacteristicValue.int32(0).format == .int)
         #expect(HAPCharacteristicValue.float(0.0).format == .float)
         #expect(HAPCharacteristicValue.string("").format == .string)
         #expect(HAPCharacteristicValue.data(Data()).format == .data)

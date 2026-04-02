@@ -290,6 +290,11 @@ public struct CharacteristicProtocol: Sendable {
                     if let value = char.value {
                         charDict["value"] = encodeValue(value)
                     }
+                    if let v = char.minValue { charDict["minValue"] = v }
+                    if let v = char.maxValue { charDict["maxValue"] = v }
+                    if let v = char.minStep { charDict["minStep"] = v }
+                    if let v = char.unit { charDict["unit"] = v.rawValue }
+                    if let v = char.validValues { charDict["valid-values"] = v }
                     charList.append(charDict)
                 }
 
