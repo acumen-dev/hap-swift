@@ -182,7 +182,8 @@ public struct CharacteristicProtocol: Sendable {
         let accessories = await bridge.accessoryDatabase()
         let json = encodeAccessoryDatabase(accessories)
         if let str = String(data: json, encoding: .utf8) {
-            logger.info("GET /accessories (\(accessories.count) accessories):\n\(str)")
+            logger.debug("GET /accessories (\(accessories.count) accessories)")
+            logger.trace("GET /accessories body:\n\(str)")
         }
         return HTTPProtocol.okResponse(body: json, contentType: HTTPProtocol.hapJSON)
     }
@@ -234,7 +235,7 @@ public struct CharacteristicProtocol: Sendable {
             return HTTPProtocol.errorResponse(status: 400, message: "Bad Request")
         }
 
-        logger.info("PUT /characteristics: \(characteristics.count) characteristic(s)")
+        logger.debug("PUT /characteristics: \(characteristics.count) characteristic(s)")
 
         for charDict in characteristics {
             guard let aid = charDict["aid"] as? UInt64 ?? (charDict["aid"] as? Int).map(UInt64.init),
@@ -250,19 +251,19 @@ public struct CharacteristicProtocol: Sendable {
                 } else {
                     await bridge.unsubscribe(connectionID: connectionID, aid: aid, iid: iid)
                 }
-                logger.info("PUT /characteristics: aid=\(aid) iid=\(iid) ev=\(ev) (connection \(connectionID))")
+                logger.debug("PUT /characteristics: aid=\(aid) iid=\(iid) ev=\(ev) (connection \(connectionID))")
             }
 
             if let rawValue = charDict["value"] {
                 let value = decodeValue(rawValue)
                 if let value {
-                    logger.info("PUT /characteristics: write aid=\(aid) iid=\(iid) value=\(value)")
+                    logger.debug("PUT /characteristics: write aid=\(aid) iid=\(iid) value=\(value)")
                     try await bridge.writeCharacteristic(aid: aid, iid: iid, value: value)
                 } else {
                     logger.warning("PUT /characteristics: aid=\(aid) iid=\(iid) could not decode value: \(rawValue) (type: \(type(of: rawValue)))")
                 }
             } else {
-                logger.info("PUT /characteristics: aid=\(aid) iid=\(iid) no value field (keys: \(Array(charDict.keys)))")
+                logger.trace("PUT /characteristics: aid=\(aid) iid=\(iid) no value field (keys: \(Array(charDict.keys)))")
             }
         }
 
