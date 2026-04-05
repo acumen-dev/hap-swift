@@ -312,7 +312,7 @@ public actor HAPBridge {
     public func subscribe(connectionID: Int, aid: UInt64, iid: UInt64) {
         let key = Self.handlerKey(aid: aid, iid: iid)
         subscriptions[key, default: []].insert(connectionID)
-        logger.info("Event subscribe: connection \(connectionID) → aid=\(aid) iid=\(iid)")
+        logger.debug("Event subscribe: connection \(connectionID) → aid=\(aid) iid=\(iid)")
     }
 
     public func unsubscribe(connectionID: Int, aid: UInt64, iid: UInt64) {
@@ -338,7 +338,7 @@ public actor HAPBridge {
             return
         }
 
-        logger.info("Event notify: aid=\(aid) iid=\(iid) value=\(value) → \(subscribers.count) subscriber(s)")
+        logger.debug("Event notify: aid=\(aid) iid=\(iid) value=\(value) → \(subscribers.count) subscriber(s)")
         let eventData = Self.buildEventPayload(aid: aid, iid: iid, value: value)
         let subs = subscribers
         Task { await handler(subs, eventData) }
