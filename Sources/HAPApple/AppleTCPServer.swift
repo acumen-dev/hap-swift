@@ -212,11 +212,29 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
 
         // Set the state handler BEFORE start() to eliminate the race where .ready
         // fires between start() and a second handler assignment.
-        // CheckedContinuation is Sendable, so it can be captured directly in the
-        // @Sendable closure without a mutable guard variable.
-        // NWListener guarantees each state is delivered at most once, so calling
-        // continuation.resume() exactly once is safe by API contract.
+        // The continuation is wrapped in a one-shot box because multiple states
+        // (.ready then .cancelled) can fire over the listener's lifetime — only
+        // the first resume is valid.
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            // One-shot wrapper: the first resume() consumes the continuation;
+            // subsequent calls are no-ops.  Safe without a lock because
+            // stateUpdateHandler is always called on the listener's serial queue.
+            class ContinuationBox: @unchecked Sendable {
+                var continuation: CheckedContinuation<Void, Error>?
+                init(_ continuation: CheckedContinuation<Void, Error>) {
+                    self.continuation = continuation
+                }
+                func resume() {
+                    continuation?.resume()
+                    continuation = nil
+                }
+                func resume(throwing error: Error) {
+                    continuation?.resume(throwing: error)
+                    continuation = nil
+                }
+            }
+            let box = ContinuationBox(continuation)
+
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
@@ -225,13 +243,13 @@ public final class AppleTCPServer: HAPServer, @unchecked Sendable {
                         self.lock.withLock { self._port = actualPort }
                         self.logger.info("HAP server listening on port \(actualPort)")
                     }
-                    continuation.resume()
+                    box.resume()
                 case .failed(let error):
                     self.logger.error("HAP listener failed: \(error)")
-                    continuation.resume(throwing: error)
+                    box.resume(throwing: error)
                 case .cancelled:
                     self.logger.info("HAP listener cancelled")
-                    continuation.resume(throwing: HAPError.unavailable)
+                    box.resume(throwing: HAPError.unavailable)
                 default:
                     break
                 }
